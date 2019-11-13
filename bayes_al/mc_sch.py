@@ -5,6 +5,8 @@ import dgl.function as fn
 from torch.nn import Softplus
 import dgl
 
+'''Monte Carlo Dropout Schnet for active learning'''
+
 #cannot first write device in model
 class AtomEmbedding(nn.Module):
     """
@@ -136,23 +138,24 @@ class RBFLayer(nn.Module):
         return g.edata["rbf"]
 
 
-class CFConv(nn.Module):
+class MC_CFConv(nn.Module):
     """
     The continuous-filter convolution layer in SchNet.
     One CFConv contains one rbf layer and three linear layer
         (two of them have activation funct).
     """
 
-    def __init__(self, rbf_dim, dim=64, act="sp"):
+    def __init__(self, rbf_dim, dropout=0.05,dim=64, act="sp"):
         """
         Args:
             rbf_dim: the dimsion of the RBF layer
             dim: the dimension of linear layers
             act: activation function (default shifted softplus)
         """
-        super(CFConv,self).__init__()
+        super(MC_CFConv,self).__init__()
         self._rbf_dim = rbf_dim
         self._dim = dim
+        self._dropout = dropout
 
         self.linear_layer1 = nn.Linear(self._rbf_dim, self._dim)
         self.linear_layer2 = nn.Linear(self._dim, self._dim)
@@ -162,11 +165,16 @@ class CFConv(nn.Module):
         else:
             self.activation = act
 
+        # additional MC dropout
+        self.mc_drop1 = nn.Dropout(self._dropout)
+        self.mc_drop2 = nn.Dropout(self._dropout)
+
+
     def update_edge(self, edges):
         rbf = edges.data["rbf"]
-        h = self.linear_layer1(rbf)
+        h = self.mc_drop1(self.linear_layer1(rbf))
         h = self.activation(h)
-        h = self.linear_layer2(h)
+        h = self.mc_drop2(self.linear_layer2(h))
         return {"h": h}
 
     def forward(self, g):
@@ -176,34 +184,40 @@ class CFConv(nn.Module):
         return g.ndata["new_node"]
 
 
-class Interaction(nn.Module):
+class MC_Interaction(nn.Module):
     """
     The interaction layer in the SchNet model.
     """
 
-    def __init__(self, rbf_dim, dim):
-        super(Interaction,self).__init__()
+    def __init__(self, rbf_dim, dim, dropout =0.05):
+        super(MC_Interaction,self).__init__()
         self._node_dim = dim
+        self._dropout = dropout
         self.activation = nn.Softplus(beta=0.5, threshold=14)
         self.node_layer1 = nn.Linear(dim, dim, bias=False)
-        self.cfconv = CFConv(rbf_dim, dim, act=self.activation)
+        self.cfconv = MC_CFConv(rbf_dim, dim=dim, dropout=self._dropout,act=self.activation)
         self.node_layer2 = nn.Linear(dim, dim)
         self.node_layer3 = nn.Linear(dim, dim)
 
+        #additional dropouts
+        self.mc_drop1 = nn.Dropout(self._dropout)
+        self.mc_drop2 = nn.Dropout(self._dropout)
+        self.mc_drop3 = nn.Dropout(self._dropout)
+
     def forward(self, g):
 
-        g.ndata["new_node"] = self.node_layer1(g.ndata["node"])
+        g.ndata["new_node"] = self.mc_drop1(self.node_layer1(g.ndata["node"]))
         cf_node = self.cfconv(g)
-        cf_node_1 = self.node_layer2(cf_node)
+        cf_node_1 = self.mc_drop2(self.node_layer2(cf_node))
         cf_node_1a = self.activation(cf_node_1)
-        new_node = self.node_layer3(cf_node_1a)
+        new_node = self.mc_drop3(self.node_layer3(cf_node_1a))
         g.ndata["node"] = g.ndata["node"] + new_node
         return g.ndata["node"]
 
 
 
 
-class SchNetModel(nn.Module):
+class MC_SchNetModel(nn.Module):
     """
     SchNet Model from:
         Schütt, Kristof, et al.
@@ -220,6 +234,7 @@ class SchNetModel(nn.Module):
                  norm=False,
                  atom_ref=None,
                  pre_train=None,
+                 dropout = 0.05
                  ):
         """
         Args:
@@ -232,9 +247,10 @@ class SchNetModel(nn.Module):
                       or set to None with random initialization
             norm: normalization
         """
-        super(SchNetModel,self).__init__()
+        super(MC_SchNetModel,self).__init__()
         self.name = "SchNet"
         self._dim = dim
+        self.dropout = dropout
         self.cutoff = cutoff
         self.width = width
         self.n_conv = n_conv
@@ -250,10 +266,14 @@ class SchNetModel(nn.Module):
             self.embedding_layer = AtomEmbedding(pre_train=pre_train)
         self.rbf_layer = RBFLayer(0, cutoff, width)
         self.conv_layers = nn.ModuleList(
-            [Interaction(self.rbf_layer._fan_out, dim) for i in range(n_conv)])
+            [MC_Interaction(self.rbf_layer._fan_out, dim,self.dropout) for i in range(n_conv)])
 
         self.atom_dense_layer1 = nn.Linear(dim, 64)
         self.atom_dense_layer2 = nn.Linear(64, output_dim)
+
+        self.atom_drop1 = nn.Dropout(self.dropout)
+        self.atom_drop2 = nn.Dropout(self.dropout)
+
 
     def set_mean_std(self, mean, std):
         self.mean_per_atom = mean.clone().detach()
@@ -262,7 +282,6 @@ class SchNetModel(nn.Module):
 
     def forward(self, g):
         # g_list list of molecules
-
         g.edata['distance'] = g.edata['distance'].reshape(-1,1)
 
         self.embedding_layer(g)
@@ -272,9 +291,9 @@ class SchNetModel(nn.Module):
         for idx in range(self.n_conv):
             self.conv_layers[idx](g)
 
-        atom = self.atom_dense_layer1(g.ndata["node"])
+        atom = self.atom_drop1(self.atom_dense_layer1(g.ndata["node"]))
         atom = self.activation(atom)
-        res = self.atom_dense_layer2(atom)
+        res = self.atom_drop2(self.atom_dense_layer2(atom))
         g.ndata["res"] = res
 
         if self.atom_ref is not None:
@@ -285,6 +304,3 @@ class SchNetModel(nn.Module):
                 "res"] * self.std_per_atom + self.mean_per_atom
         res = dgl.mean_nodes(g, "res")
         return res
-
-if __name__ == "__main__":
-    pass

@@ -18,6 +18,8 @@ class Global_Config():
                           'qm9':self.DATASET_PATH['qm9']+'/qm9_mol_test.pkl',
                          'cifar10':self.DATASET_PATH['cifar10']+'/Test.pkl'}
 
+        self.valid_pkl = {'qm9':self.DATASET_PATH['qm9']+'/qm9_mol_valid.pkl'
+                          }
 
         self.save_model_path = lambda comment:self.PATH+'/datasets/models'+time.strftime('/%m%d_%H_%M')+comment+'.tar'
 
@@ -74,6 +76,15 @@ def make_args():
                         help='initial data size')
     parser.add_argument('--k_center_ft_epochs',default=10,
                                help='finetuning epochs for k center method')
+
+    # bayes active learning settings
+    parser.add_argument('--bald_ft_epochs',default=5,
+                        help='finetuning epochs for bayes active learning')
+    parser.add_argument('--mc_sampling_num',default=100,
+                        help='monte carlo sampling number')
+
+
+
     args = parser.parse_args()
 
     return args

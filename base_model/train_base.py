@@ -1,17 +1,20 @@
+#!usr/bin/env python3
+# -*- coding:utf-8 -*-
+
 import argparse
 import torch
+import sys
 import torch.nn as nn
-from base_model.schmodel import SchNetModel
 from torch.utils.data import DataLoader
-from utils.funcs import *
 from torchnet import meter
 from tensorboardX import SummaryWriter
 import time
 import pickle
-import os
-import time
-from config import *
 
+sys.path.append('..')
+from utils.funcs import *
+from base_model.schmodel import SchNetModel
+from config import *
 
 def train(args,train_dataset,test_dataset, model,optimizer, writer,device):
     print("start")
