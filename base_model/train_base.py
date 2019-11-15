@@ -110,14 +110,7 @@ if __name__ == "__main__":
     print(args)
 
 
-    # train_paths = ['/media/sdc/seg3d/anaconda3/pkgs/libsnn/datasets/OPV/OPV_dataset_train_2.pkl']
-                  # '/media/sdc/seg3d/anaconda3/pkgs/libsnn/datasets/OPV/OPV_dataset_train_2.pkl',
-                  # '/media/sdc/seg3d/anaconda3/pkgs/libsnn/datasets/OPV/OPV_dataset_train_3.pkl']
-    # test_path = '/media/sdc/seg3d/anaconda3/pkgs/libsnn/datasets/OPV/OPV_dataset_test.pkl'
-    # valid_path = '/media/sdc/seg3d/anaconda3/pkgs/libsnn/datasets/OPV/OPV_dataset_valid.pkl'
-    # train_path = config.PATH+'/datasets/OPV/data_elem_train.pkl'
-    # test_path =  config.PATH+'/datasets/OPV/data_elem_test.pkl'
-    # valid_path = config.PATH+'/datasets/OPV/data_elem_valid.pkl'
+
 
 
     logs_path = config.PATH+'/datasets/logs'+ time.strftime('/%m%d_%H_%M')

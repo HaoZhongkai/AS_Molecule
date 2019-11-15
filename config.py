@@ -50,7 +50,7 @@ def make_args():
                         help='use multi gpu for training')
     parser.add_argument('--use_default',default=False,
                         help='whether use augments in args')
-    parser.add_argument('--lr',default=1e-3,
+    parser.add_argument('--lr',default=4e-4,
                         help='learning rate')
 
 
@@ -60,7 +60,7 @@ def make_args():
 
 
     # universal active learning settings
-    parser.add_argument('--batch_data_num', default=200)
+    parser.add_argument('--batch_data_num', default=100)
     parser.add_argument('--test_freq',default=10)
 
 
@@ -72,7 +72,7 @@ def make_args():
 
 
     # k-center settings
-    parser.add_argument('--init_data_num',default=1000,
+    parser.add_argument('--init_data_num',default=5000,
                         help='initial data size')
     parser.add_argument('--k_center_ft_epochs',default=10,
                                help='finetuning epochs for k center method')

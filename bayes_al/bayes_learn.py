@@ -167,7 +167,7 @@ if __name__ == "__main__":
     if args.use_default is False:
         args.batchsize = 64
         args.epochs = 300
-        args.use_tb = True
+        args.use_tb = False
         args.dataset = 'qm9'
         args.device = 0
         args.save_model = True
