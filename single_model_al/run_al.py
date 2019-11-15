@@ -13,17 +13,18 @@ from single_model_al.sampler import AL_sampler, Trainer, Inferencer
 from utils.funcs import MoleDataset
 from config import *
 
+
 def active_learning(input):
     args = input['args']
     config = input['config']
     train_dataset = input['train_dataset']
     test_dataset = input['test_dataset']
-    val_dataset = input['val_dataset']
+    # val_dataset = input['val_dataset']
     model = input['model']
-    optimizer = input['optimizer']
+    # optimizer = input['optimizer']
     writer = input['writer']
     device = input['device']
-    test_freq = input['test_freq']
+    # test_freq = input['test_freq']
     al_method = input['al_method']
     ft_method = input['ft_method']
     ft_epochs = input['ft_epochs']
@@ -35,14 +36,14 @@ def active_learning(input):
     train_info = {'total_epochs': [],
                   'train_loss': [],
                   'train_mae': []}
-    t_iterations = int((len(train_dataset)-args.init_data_num)/args.batch_data_num)  #discard tail data
-    total_data_num = t_iterations*args.batch_data_num+args.init_data_num
+    t_iterations = int((len(train_dataset)-args.init_data_num)/args.batch_data_num) + 1  #discard tail data
+    total_data_num = (t_iterations-1)*args.batch_data_num+args.init_data_num
     train_ids = random.sample(range(total_data_num),args.init_data_num)
 
 
     al_sampler = AL_sampler(args,total_data_num,args.batch_data_num,train_ids,al_method)
     al_inferencer = Inferencer(args,al_method)
-    al_trainer = Trainer(args,ft_method,ft_epochs=ft_epochs)
+    al_trainer = Trainer(args,t_iterations,method=ft_method,ft_epochs=ft_epochs)
 
     # initialization training
     train_mols = [train_dataset.mols[i] for i in train_ids]
@@ -51,9 +52,12 @@ def active_learning(input):
     input['info'] = train_info
     train_info =  al_trainer.finetune(input)
 
-    for iters in range(1,t_iterations+1):
+    # due to the initial iteration, the showed iteration will be 1 smaller than the actual iteration
+    for iters in range(1,t_iterations):
+
         preds = al_inferencer.run(model,train_dataset,device)
         new_batch_ids = al_sampler.query(preds)
+
         train_mols.extend([train_dataset.mols[i] for i in new_batch_ids])
         train_subset = MoleDataset(mols=train_mols)
         label_rate = len(train_subset) / total_data_num
@@ -61,7 +65,7 @@ def active_learning(input):
 
         #finetuning
         # renew train_dataset
-        input['train_subset'] = train_subset
+        input['train_dataset'] = train_subset
         input['info'] = train_info
         train_info = al_trainer.finetune(input)
 
@@ -81,8 +85,8 @@ def active_learning(input):
                     'data_ids': al_sampler.data_ids
                 }, config.save_model_path(args.dataset+al_method+'_'+ft_method))
 
-        ac_results = dict(zip(label_rates, ac_info))
-        return ac_results
+    ac_results = dict(zip(label_rates, ac_info))
+    return ac_results
 
 
 
@@ -90,14 +94,14 @@ if __name__ == "__main__":
     config = Global_Config()
     args = make_args()
 
-    al_method = 'bayes'
-    ft_method = 'fixed_epochs'
-    ft_epochs = 8
+    al_method = 'k_center'
+    ft_method = 'by_valid'
+    ft_epochs = 2
 
 
     print(args)
     logs_path = config.PATH + '/datasets/logs' + time.strftime('/%m%d_%H_%M')
-    result_path = config.PATH + '/datasets/k_center/' + args.dataset + time.strftime('_%m%d_%H_%M.txt')
+    result_path = config.PATH + '/datasets/s_al/' + args.dataset+'_'+ al_method+'_'+ft_method + time.strftime('_%m%d_%H_%M.txt')
     train_set, valid_set, test_set = MoleDataset(prop_name=args.prop_name), MoleDataset(prop_name=args.prop_name), MoleDataset(prop_name=args.prop_name)
 
     train_set.load_mol(config.train_pkl[args.dataset]), valid_set.load_mol(config.valid_pkl[args.dataset]),test_set.load_mol(config.test_pkl[args.dataset])
@@ -139,6 +143,9 @@ if __name__ == "__main__":
     }
     results = active_learning(input)
 
+    '''result file description:
+        label_rate  train_loss  train_mae   test_mae
+    '''
     with open(result_path, 'w') as fp:
         for key in results.keys():
             fp.write(str(key) + '\t' + ''.join([str(i) + '\t' for i in results[key]]) + '\n')

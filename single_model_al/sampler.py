@@ -55,8 +55,9 @@ class AL_sampler(object):
 
 
     def _random_query(self):
-        new_batch_ids = np.sort(random.sample(self.data_ids, self.batch_data_num))
-        self.data_ids = np.delete(self.data_ids, new_batch_ids)
+        query_ids = random.sample(range(len(self.data_ids)), self.batch_data_num)
+        new_batch_ids = self.data_ids[query_ids]
+        self.data_ids = np.delete(self.data_ids, query_ids)
         return new_batch_ids
 
 
@@ -88,7 +89,8 @@ class AL_sampler(object):
 
     def _bayes_query(self, input):
         time0 = time.time()
-        variance = torch.std(input,dim=0).cpu().numpy().squeeze()
+        preds_unlabeled = input[self.data_ids]
+        variance = torch.std(preds_unlabeled,dim=1).cpu().numpy().squeeze()
         vars_ids = np.stack([variance, np.arange(0, len(variance))], axis=0)
         queries = vars_ids[:, vars_ids[0].argsort()]
         query_ids = queries[1].astype(int)[-self.batch_data_num:]  # query id according to new dataset
@@ -160,7 +162,7 @@ class Inferencer(object):
 
     def _bayes_inference(self,model, dataset, device):
         time0 = time.time()
-        dataloader = DataLoader(dataset=dataset, batch_size=self.args.batchsize, collate_fn=batcher, shuffle=False,
+        dataloader = DataLoader(dataset=dataset, batch_size=self.args.batchsize*15, collate_fn=batcher, shuffle=False,
                                 num_workers=self.args.workers)
         model.to(device)
         model.train()
@@ -174,7 +176,7 @@ class Inferencer(object):
                 for i in range(self.args.mc_sampling_num):
                     pred[:, i] = model(g).squeeze()
                 preds.append(pred)
-        preds = torch.cat(preds, dim=0).cpu().numpy()  # torch tensor
+        preds = torch.cat(preds, dim=0)  # torch tensor
         print('inference {}'.format(time.time() - time0))
         return preds
 
@@ -187,9 +189,10 @@ class Trainer(object):
             2. varying_epochs: finetune epochs are decided by an input list
             3. by_valid: finetune stops when MAE on validation set increases
     '''
-    def __init__(self,args,method='fixed_epochs',ft_epochs=None):
+    def __init__(self,args,total_iters,method='fixed_epochs',ft_epochs=None):
         self.args = args
         self.method = method
+        self.total_iters = total_iters
         self.iter = 0
         self.total_epochs = 0
 
@@ -198,12 +201,15 @@ class Trainer(object):
                 print('fixed epochs finetuning requires a parameter ft_epochs: int')
                 raise ValueError
             else:
-                self.ft_epochs = ft_epochs
+                self.ft_epochs = [ft_epochs]* self.total_iters
 
 
         elif self.method == 'varying_epochs':
             if type(ft_epochs) is not list:
                 print('varying epochs finetuning requires a parameter ft_epochs: list')
+                raise ValueError
+            elif len(ft_epochs) != self.total_iters:
+                print('epochs list size not match')
                 raise ValueError
             else:
                 self.ft_epochs = ft_epochs
@@ -216,7 +222,7 @@ class Trainer(object):
             raise ValueError
 
     # augments:
-    #   info:          a dict contains the training infomation
+    #   info:          a dict contains the training information
     #   ft_epochs:     list of ft_epochs
     def finetune(self, input):
     # def finetune(self,train_dataset,model,optimizer,writer,info,device):
@@ -232,10 +238,10 @@ class Trainer(object):
         else:
             val_dataset = None
 
-        if self.method == 'fixed_epochs' or 'varying_epochs':
+        if self.method  in ('fixed_epochs','varying_epochs'):
             info = self._ft_with_known_epochs(train_dataset,model,optimizer,writer,info,device)
 
-        elif self.method == 'by_valid':
+        elif self.method in ('by_valid',):
             if val_dataset is None:
                 raise ValueError
             info = self._ft_by_valid_datas(train_dataset,val_dataset,model,optimizer,writer,info,device)
@@ -294,8 +300,11 @@ class Trainer(object):
             mae_meter.reset()
             model.train()
             for idx, (mols, label) in enumerate(train_loader):
+                g = dgl.batch([mol.ful_g for mol in mols])
+                g.to(device)
+
                 label = label.to(device)
-                res = model(mols, device)[0].squeeze()  # use SchEmbedding model
+                res = model(g).squeeze()  # use SchEmbedding model
                 loss = loss_fn(res, label)
                 mae = MAE_fn(res, label)
 
@@ -315,6 +324,8 @@ class Trainer(object):
             if self.args.use_tb:
                 writer.add_scalar('train_loss', mse_meter.value()[0], self.total_epochs)
                 writer.add_scalar('train_mae', mae_meter.value()[0], self.total_epochs)
+
+        return info
 
 
 
@@ -340,9 +351,9 @@ class Trainer(object):
             _, valid_mae = self.test(val_dataset,model,device)
 
             if valid_mae>mae_valid[-1]:
-                self.total_epochs += epoch
                 break
             else:
+                self.total_epochs += 1
                 mae_valid.append(valid_mae)
                 epoch += 1
 
@@ -351,8 +362,10 @@ class Trainer(object):
             mae_meter.reset()
             model.train()
             for idx, (mols, label) in enumerate(train_loader):
+                g = dgl.batch([mol.ful_g for mol in mols])
+                g.to(device)
                 label = label.to(device)
-                res = model(mols, device)[0].squeeze()  # use SchEmbedding model
+                res = model(g).squeeze()  # use SchEmbedding model
                 loss = loss_fn(res, label)
                 mae = MAE_fn(res, label)
 
@@ -362,9 +375,10 @@ class Trainer(object):
 
                 mae_meter.add(mae.detach().item())
                 mse_meter.add(loss.detach().item())
-            print("Epoch {:2d}/{:2d}, training: loss: {:.7f}, mae: {:.7f}".format(epoch, self.total_epochs,
+            print("Epoch {:2d}/{:2d}, training: loss: {:.7f}, mae: {:.7f}  validing mae {:.7f}".format(epoch, self.total_epochs,
                                                                                   mse_meter.value()[0],
-                                                                                  mae_meter.value()[0]))
+                                                                                  mae_meter.value()[0],
+                                                                                  valid_mae))
 
             info['train_loss'].append(mse_meter.value()[0])
             info['train_mae'].append(mae_meter.value()[0])
@@ -373,7 +387,7 @@ class Trainer(object):
                 writer.add_scalar('train_loss', mse_meter.value()[0], self.total_epochs)
                 writer.add_scalar('train_mae', mae_meter.value()[0], self.total_epochs)
 
-
+        return info
 
 
 
