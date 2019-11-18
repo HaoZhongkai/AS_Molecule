@@ -61,7 +61,7 @@ def make_args():
 
     # universal active learning settings
     parser.add_argument('--batch_data_num', default=100)
-    parser.add_argument('--test_freq',default=10)
+    parser.add_argument('--test_freq',default=5)
 
 
     #qbc settings
@@ -80,8 +80,21 @@ def make_args():
     # bayes active learning settings
     parser.add_argument('--bald_ft_epochs',default=5,
                         help='finetuning epochs for bayes active learning')
-    parser.add_argument('--mc_sampling_num',default=100,
+    parser.add_argument('--mc_sampling_num',default=80,
                         help='monte carlo sampling number')
+
+
+
+    # run_al settings
+    parser.add_argument('--al_method',type=str,default='msg_mask',
+                        help='AL method in run_al.py, must be in random, bayes, k_center, msg_mask, dropout')
+    parser.add_argument('--ft_method',type=str,default='fixed_epochs',
+                        help='finetuning method in run_al.py, must be in fixed_epochs, varying_epochs, by_valid')
+    parser.add_argument('--ft_epochs',type=int,default=5,
+                        help='the max epochs number for fixed epochs finetuning')
+    parser.add_argument('--re_init',type=bool,default=False,
+                        help='whether to re-initialize the model after each iteration, advised to use by_valid ft_method if set True')
+
 
 
 

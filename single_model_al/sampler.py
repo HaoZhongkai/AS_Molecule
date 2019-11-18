@@ -48,6 +48,9 @@ class AL_sampler(object):
         elif self.al_method == 'bayes':
             new_batch_ids = self._bayes_query(input)
 
+        elif self.al_method == 'msg_mask':
+            new_batch_ids = self._msg_mask_query(input)
+
         else:
             raise ValueError
 
@@ -87,10 +90,10 @@ class AL_sampler(object):
         return new_batch_ids
 
 
-    def _bayes_query(self, input):
+    def _variance_query(self,preds):
         time0 = time.time()
-        preds_unlabeled = input[self.data_ids]
-        variance = torch.std(preds_unlabeled,dim=1).cpu().numpy().squeeze()
+        preds_unlabeled = preds[self.data_ids]
+        variance = torch.std(preds_unlabeled, dim=1).cpu().numpy().squeeze()
         vars_ids = np.stack([variance, np.arange(0, len(variance))], axis=0)
         queries = vars_ids[:, vars_ids[0].argsort()]
         query_ids = queries[1].astype(int)[-self.batch_data_num:]  # query id according to new dataset
@@ -100,6 +103,13 @@ class AL_sampler(object):
         print('query new data  {}'.format(time.time() - time0))
         return new_batch_ids
 
+
+    def _bayes_query(self, input):
+        return self._variance_query(input)
+
+
+    def _msg_mask_query(self, input):
+        return self._variance_query(input)
 
 
 
@@ -129,6 +139,8 @@ class Inferencer(object):
             output = self._k_center_inference(model,dataset,device)
         elif self.method == 'bayes':
             output = self._bayes_inference(model,dataset, device)
+        elif self.method in ['dropout','msg_mask']:
+            output = self._perbulence_inference(model,dataset,device)
         else:
             raise ValueError
         return output
@@ -162,7 +174,7 @@ class Inferencer(object):
 
     def _bayes_inference(self,model, dataset, device):
         time0 = time.time()
-        dataloader = DataLoader(dataset=dataset, batch_size=self.args.batchsize*15, collate_fn=batcher, shuffle=False,
+        dataloader = DataLoader(dataset=dataset, batch_size=self.args.batchsize*10, collate_fn=batcher, shuffle=False,
                                 num_workers=self.args.workers)
         model.to(device)
         model.train()
@@ -179,6 +191,28 @@ class Inferencer(object):
         preds = torch.cat(preds, dim=0)  # torch tensor
         print('inference {}'.format(time.time() - time0))
         return preds
+
+
+    def _perbulence_inference(self,model, dataset, device):
+        time0 = time.time()
+        dataloader = DataLoader(dataset=dataset, batch_size=self.args.batchsize * 13, collate_fn=batcher, shuffle=False,
+                                num_workers=self.args.workers)
+        model.to(device)
+        model.train()
+        model.set_mean_std(dataset.mean, dataset.std)
+        preds = []
+        with torch.no_grad():
+            for idx, (mols, _) in enumerate(dataloader):
+                pred = torch.zeros(len(mols), self.args.mc_sampling_num)
+                g = dgl.batch([mol.ful_g for mol in mols])
+                g.to(device)
+                for i in range(self.args.mc_sampling_num):
+                    pred[:, i] = model.inference(g).squeeze()
+                preds.append(pred)
+        preds = torch.cat(preds, dim=0)  # torch tensor
+        print('inference {}'.format(time.time() - time0))
+        return preds
+
 
 
 
