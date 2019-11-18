@@ -13,7 +13,7 @@ class Bayes_sampler(object):
     # query by TODO: the calculation of variance need to be checked
     def query(self,preds):
         time0 = time.time()
-        variance = np.std(preds, axis=0).squeeze()
+        variance = np.std(preds, axis=1).squeeze()
         vars_ids = np.stack([variance, np.arange(0, len(variance))], axis=0)
         queries = vars_ids[:, vars_ids[0].argsort()]
         query_ids = queries[1].astype(int)[-self.batch_data_num:]  # query id according to new dataset

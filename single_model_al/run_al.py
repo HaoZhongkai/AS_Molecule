@@ -8,6 +8,7 @@ from tensorboardX import SummaryWriter
 sys.path.append('..')
 
 from bayes_al.mc_sch import MC_SchNetModel
+from bayes_al.mm_sch import MM_SchNetModel
 from base_model.schmodel import SchNetModel
 from single_model_al.sampler import AL_sampler, Trainer, Inferencer
 from utils.funcs import MoleDataset
@@ -61,7 +62,6 @@ def active_learning(input):
         train_mols.extend([train_dataset.mols[i] for i in new_batch_ids])
         train_subset = MoleDataset(mols=train_mols)
         label_rate = len(train_subset) / total_data_num
-        label_rates.append(label_rate)
 
         #finetuning
         # renew train_dataset
@@ -73,6 +73,7 @@ def active_learning(input):
         if iters % args.test_freq == 0:
             testing_mse, testing_mae = al_trainer.test(test_dataset, model, device)
             print('labels ratio {} number {}  test mae {}'.format(label_rate, len(train_subset), testing_mae))
+            label_rates.append(label_rate)
             ac_info.append((train_info['train_loss'][-1], train_info['train_mae'][-1], testing_mse, testing_mae))
 
             if args.use_tb:
@@ -93,11 +94,23 @@ def active_learning(input):
 if __name__ == "__main__":
     config = Global_Config()
     args = make_args()
+    #
+    # al_method = 'random'
+    # ft_method = 'by_valid'
+    # ft_epochs = 2
+    al_method = args.al_method
+    ft_method = args.ft_method
+    ft_epochs = args.ft_epochs
 
-    al_method = 'k_center'
-    ft_method = 'by_valid'
-    ft_epochs = 2
-
+    # sch_settings = {
+    #     'dim':32,
+    #     'n_conv':4,
+    #     'cutoff':5.0,
+    #     'width':0.5,
+    #     'norm':True,
+    #     'output_dim':1,
+    #     'dropout':0.05
+    # }
 
     print(args)
     logs_path = config.PATH + '/datasets/logs' + time.strftime('/%m%d_%H_%M')
@@ -113,18 +126,22 @@ if __name__ == "__main__":
     else:
         writer = None
 
-    if al_method is 'random' or 'k_center':
-        model = SchNetModel(dim=32, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
+
+
+    if al_method in ['random','k_center']:
+        model = SchNetModel(dim=48, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
     elif al_method is 'bayes':
-        model = MC_SchNetModel(dim=32, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
+        model = MC_SchNetModel(dim=48, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
+    elif al_method is 'msg_mask':
+        model = MM_SchNetModel(dim=48, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
     else:
         raise ValueError
 
 
 
-    print(model)
     optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)
-
+    print(model)
+    print(optimizer)
     input = {
         'args':args,
         'config':config,

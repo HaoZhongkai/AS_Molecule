@@ -8,6 +8,7 @@ import pickle
 from torch.nn import DataParallel
 import os
 import torch.utils.data as data
+import random
 # import torch.multiprocessing as mp
 # torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -92,6 +93,8 @@ class Molecule():
         for i in range(self.node_num):
             self.nidx[i] = Molecule.NODE_TYPE[self.atoms[i]]
         return
+
+
 
 
 
@@ -254,6 +257,54 @@ def batcher(input):
 class RefDataParallel(DataParallel):
     def set_mean_std(self,mean,std):
         return getattr(self.module, 'set_mean_std')(mean,std)
+
+
+# c_ij = \sum_k (a_ik - b_jk)^2,torch Tensor
+def pairwise_L2(A,B):
+    A_norm2 = torch.sum(A**2,dim=1).unsqueeze(1).expand([A.shape[0],B.shape[0]])
+    B_norm2 = torch.sum(B**2,dim=1).unsqueeze(0).expand([A.shape[0],B.shape[0]])
+    C = A_norm2 + B_norm2 - 2 * A @ B.t()
+    return C
+
+
+# torch tensor data_num*embed_dim, calculate by L2 distance
+# show stats: calculate mean MSE (mean on L2 and clusters)
+def k_medoid(embeddings, cluster_num, iters, show_stats=False):
+    # init
+    center_ids = random.sample(range(embeddings.shape[0]),cluster_num)
+    cluster_centers = embeddings[center_ids]
+    for i in range(iters):
+
+        distances = pairwise_L2(embeddings, cluster_centers)
+        data_tags = torch.argmin(distances,dim=1)
+        n_count = torch.ones_like(embeddings).float()
+        # see: https://stackoverflow.com/questions/58007127/pytorch-differentiable-conditional-index-based-sum
+        n_centers = torch.zeros([data_tags.max()+1,embeddings.shape[1]])
+        avg_centers = torch.zeros([data_tags.max()+1, embeddings.shape[1]])
+        n_centers.index_add_(0,data_tags,n_count)
+        avg_centers.index_add_(0,data_tags, embeddings)
+        avg_centers = avg_centers / n_centers
+        cls_ids = [[] for _ in range(cluster_num)]  # record the data ids of each cluster
+
+        [cls_ids[int(data_tags[i])].append(i) for i in range(embeddings.shape[0])]
+        for i in range(cluster_num):
+            center_ids[i] = cls_ids[i][int(torch.argmin(torch.sum((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1)))]
+        # update cluster centers
+        cluster_centers = embeddings[center_ids]
+
+        if show_stats:
+            E = 0
+            for i in range(cluster_num):
+                E += torch.sum(torch.mean((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1))
+            E  = E / cluster_num
+            print('Iteration {} Mean MSE {}'.format(i+1,E))
+    return center_ids
+
+
+
+
+
+
 
 def mol2nx(mol):
     G = nx.Graph()
