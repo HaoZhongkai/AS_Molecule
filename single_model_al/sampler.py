@@ -6,7 +6,7 @@ import time
 import math
 from torch.utils.data import DataLoader
 from torchnet import meter
-
+from copy import deepcopy
 
 from utils.funcs import *
 
@@ -27,6 +27,9 @@ class AL_sampler(object):
         self.args = args
         self.total_data_num = total_data_num
         self.batch_data_num = batch_data_num
+        self.data_mix = args.data_mix
+        self.data_mixing_rate = args.data_mixing_rate
+        self.label_ids = init_ids
         self.data_ids = np.delete(np.arange(self.total_data_num,dtype=int),init_ids)  #data unselected
         self.al_method = method
 
@@ -54,7 +57,20 @@ class AL_sampler(object):
         else:
             raise ValueError
 
+        # add the new batch ids to label_ids
+        self.label_ids.extend(new_batch_ids)
+
         return new_batch_ids
+
+
+    def generate_subset(self,new_batch_ids):
+        if self.data_mix:
+            subset_ids = deepcopy(random.sample(self.label_ids,int(self.data_mixing_rate*len(self.label_ids))))
+            subset_ids.extend(list(new_batch_ids))
+        else:
+            subset_ids = deepcopy(self.label_ids)
+            subset_ids.extend(list(new_batch_ids))
+        return subset_ids
 
 
     def _random_query(self):
@@ -174,7 +190,7 @@ class Inferencer(object):
 
     def _bayes_inference(self,model, dataset, device):
         time0 = time.time()
-        dataloader = DataLoader(dataset=dataset, batch_size=self.args.batchsize*10, collate_fn=batcher, shuffle=False,
+        dataloader = DataLoader(dataset=dataset, batch_size=self.args.batchsize*13, collate_fn=batcher, shuffle=False,
                                 num_workers=self.args.workers)
         model.to(device)
         model.train()
@@ -422,6 +438,7 @@ class Trainer(object):
                 writer.add_scalar('train_mae', mae_meter.value()[0], self.total_epochs)
 
         return info
+
 
 
 

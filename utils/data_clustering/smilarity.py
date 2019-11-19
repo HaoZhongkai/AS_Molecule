@@ -10,6 +10,8 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
+import time
+import torch
 config = Global_Config()
 
 # zinc_data = pickle.load(open('zinc_clean_smi.pkl','rb'))
@@ -89,19 +91,35 @@ def smi2vec(smi):
     return vec
 
 
+
 qm9_data_path = config.train_pkl['qm9']
 mols = pickle.load(open(qm9_data_path,'rb'))
 smis = [mol.smi for mol in mols]
 
+time0 = time.time()
 fingerprints = [smi2vec(smi) for smi in smis]
+n_components = 20
 
-pca = PCA(n_components=2)
+print('time {}'.format(time.time() - time0))
+time0 = time.time()
+
+pca = PCA(n_components=n_components)
 pca.fit(fingerprints)
 
 qm9_pca = pca.transform(fingerprints)
 
+
+
+
+
+print('time {}'.format(time.time()-time0))
 plt.scatter(qm9_pca[:,0],qm9_pca[:,1],marker='.')
 plt.savefig('qm9_pca.png')
+
+qm9_pca_t = torch.Tensor(qm9_pca)
+save_path = config.DATASET_PATH['qm9']+'/qm9_fingerprint_'+str(n_components)+'.pkl'
+
+pickle.dump(qm9_pca_t,open(save_path,'wb'))
 
 
 

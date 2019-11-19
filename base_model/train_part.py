@@ -65,9 +65,9 @@ def train(args,train_dataset,test_dataset, model,optimizer, writer,device):
         loss_test, mae_test = test(args,test_loader,model,device)
         print("Epoch {:2d}, training: loss: {:.7f}, mae: {:.7f} test: loss{:.7f}, mae:{:.7f}".format(epoch, mse_meter.value()[0], mae_meter.value()[0],loss_test,mae_test))
         if (epoch+1) % 100 == 0:
-            init_lr = init_lr / 5
+            init_lr = init_lr / 2
             for param_group in optimizer.param_groups:
-                param_group['lr'] = args.lr
+                param_group['lr'] = init_lr
             print('current learning rate: {}'.format(init_lr))
 
         info['train_loss'].append(mse_meter.value()[0])
@@ -106,13 +106,13 @@ if __name__ == "__main__":
     args = make_args()
 
     if args.use_default is False:
-        args.epochs = 300
-        args.batchsize = 24
-        args.lr = 1e-3
-        args.use_tb = False
+        args.epochs = 800
+        args.batchsize = 48
+        args.lr = 5e-4
+        args.use_tb = True
         args.dataset = 'qm9'
-        args.device = 0
-        args.save_model = False
+        args.device = 1
+        args.save_model = True
         args.workers = 0
         args.shuffle = True
         args.multi_gpu = False
@@ -141,8 +141,8 @@ if __name__ == "__main__":
         writer = SummaryWriter(log_dir=logs_path,comment='baseline_sch')
     else:
         writer = None
-    # model = SchNetModel(dim=32,n_conv=4,cutoff=5.0,width=0.5,norm=True, output_dim=1)
-    model = MC_SchNetModel(dim=32,n_conv=4,cutoff=5.0,width=0.5,norm=True, output_dim=1)
+    model = SchNetModel(dim=48,n_conv=4,cutoff=5.0,width=0.5,norm=True, output_dim=1)
+    # model = MC_SchNetModel(dim=32,n_conv=4,cutoff=5.0,width=0.5,norm=True, output_dim=1)
 
 
     # optimizer = torch.optim.SGD(model.parameters(), lr=args.lr,momentum=0.5,nesterov=0.6)
