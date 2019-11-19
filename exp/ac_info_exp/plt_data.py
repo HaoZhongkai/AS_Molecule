@@ -9,7 +9,8 @@ total_data_num = 113800
 
 file_lists = ['qm9_bayes_by_valid_1114_22_31.txt',
               'qm9_k_center_by_valid_1114_22_12.txt',
-              'qm9_random_by_valid_1115_13_02.txt'
+              'qm9_random_by_valid_1115_13_02.txt',
+              'qm9_k_center_by_valid_1115_09_07.txt',
               ]
 
 datas = []

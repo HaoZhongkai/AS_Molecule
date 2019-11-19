@@ -86,7 +86,7 @@ def make_args():
 
 
     # run_al settings
-    parser.add_argument('--al_method',type=str,default='msg_mask',
+    parser.add_argument('--al_method',type=str,default='random',
                         help='AL method in run_al.py, must be in random, bayes, k_center, msg_mask, dropout')
     parser.add_argument('--ft_method',type=str,default='fixed_epochs',
                         help='finetuning method in run_al.py, must be in fixed_epochs, varying_epochs, by_valid')
@@ -94,6 +94,10 @@ def make_args():
                         help='the max epochs number for fixed epochs finetuning')
     parser.add_argument('--re_init',type=bool,default=False,
                         help='whether to re-initialize the model after each iteration, advised to use by_valid ft_method if set True')
+    parser.add_argument('--data_mix',type=bool,default=True,
+                        help='whether finetuning only use part of original data')
+    parser.add_argument('--data_mixing_rate',type=float,default=0.5,
+                        help='how much data to use in the original dataset')
 
 
 

@@ -29,11 +29,13 @@ def active_learning(input):
     al_method = input['al_method']
     ft_method = input['ft_method']
     ft_epochs = input['ft_epochs']
+    result_path = input['result_path']
 
     print('start {} active learning'.format(al_method))
 
     ac_info = []
     label_rates = []
+    ac_results = []
     train_info = {'total_epochs': [],
                   'train_loss': [],
                   'train_mae': []}
@@ -51,6 +53,7 @@ def active_learning(input):
     train_subset = MoleDataset(mols=train_mols)
     input['train_dataset'] = train_subset
     input['info'] = train_info
+
     train_info =  al_trainer.finetune(input)
 
     # due to the initial iteration, the showed iteration will be 1 smaller than the actual iteration
@@ -58,10 +61,12 @@ def active_learning(input):
 
         preds = al_inferencer.run(model,train_dataset,device)
         new_batch_ids = al_sampler.query(preds)
+        train_subset_ids = al_sampler.generate_subset(new_batch_ids)
+        # train_mols.extend([train_dataset.mols[i] for i in new_batch_ids])
+        train_subset = MoleDataset(mols=[train_dataset.mols[i] for i in train_subset_ids])
 
-        train_mols.extend([train_dataset.mols[i] for i in new_batch_ids])
-        train_subset = MoleDataset(mols=train_mols)
-        label_rate = len(train_subset) / total_data_num
+        expect_data_num = args.init_data_num + iters*args.batch_data_num
+        label_rate = expect_data_num / total_data_num
 
         #finetuning
         # renew train_dataset
@@ -72,7 +77,7 @@ def active_learning(input):
         # record results
         if iters % args.test_freq == 0:
             testing_mse, testing_mae = al_trainer.test(test_dataset, model, device)
-            print('labels ratio {} number {}  test mae {}'.format(label_rate, len(train_subset), testing_mae))
+            print('labels ratio {} number {}/{}  test mae {}'.format(label_rate, len(train_subset),expect_data_num, testing_mae))
             label_rates.append(label_rate)
             ac_info.append((train_info['train_loss'][-1], train_info['train_mae'][-1], testing_mse, testing_mae))
 
@@ -86,7 +91,16 @@ def active_learning(input):
                     'data_ids': al_sampler.data_ids
                 }, config.save_model_path(args.dataset+al_method+'_'+ft_method))
 
-    ac_results = dict(zip(label_rates, ac_info))
+            '''result file description:
+                    label_rate  train_loss  train_mae   test_mae
+                '''
+            ac_results = dict(zip(label_rates, ac_info))
+
+            with open(result_path, 'w') as fp:
+                for key in ac_results.keys():
+                    fp.write(str(key) + '\t' + ''.join([str(i) + '\t' for i in ac_results[key]]) + '\n')
+            print('save success')
+
     return ac_results
 
 
@@ -155,16 +169,11 @@ if __name__ == "__main__":
         'test_freq':args.test_freq,
         'al_method':al_method,
         'ft_method':ft_method,
-        'ft_epochs':ft_epochs
-
+        'ft_epochs':ft_epochs,
+        'result_path':result_path
     }
     results = active_learning(input)
 
-    '''result file description:
-        label_rate  train_loss  train_mae   test_mae
-    '''
-    with open(result_path, 'w') as fp:
-        for key in results.keys():
-            fp.write(str(key) + '\t' + ''.join([str(i) + '\t' for i in results[key]]) + '\n')
+
 
     print('test success')
