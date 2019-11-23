@@ -27,4 +27,6 @@ tensorboardx>=1.6
 
 dgl>=0.3.1
 
+xlsxwriter>=1.2.6
+
 
