@@ -3,11 +3,16 @@ import numpy as np
 import random
 import torch.nn as nn
 import time
+from copy import deepcopy
 import math
 from torch.utils.data import DataLoader
 from torchnet import meter
-from copy import deepcopy
+from torch.optim import Adam
+import pandas as pd
+import sys
 
+sys.path.append('..')
+from base_model.schmodel import SchNetModel
 from utils.funcs import *
 
 
@@ -20,7 +25,7 @@ class AL_sampler(object):
             batch_data_num:         num of datas to label each iteration
             method:                 AL sampling method in 'random','k_center','bayes'
         query-------------
-            input: the output of the inference process (torch: Tensor)
+            inputs: the output of the inference process (torch: Tensor)
             output: the data ids of new batch data
     '''
     def __init__(self,args,total_data_num,batch_data_num,init_ids,method='random'):
@@ -38,21 +43,24 @@ class AL_sampler(object):
 
 
 
+    def get_label_ids(self):
+        return self.label_ids
 
-    # input: tensor of embeddings
-    def query(self, input):
+
+    # inputs: tensor of embeddings
+    def query(self, inputs):
         new_batch_ids = []
         if self.al_method == 'random':
             new_batch_ids = self._random_query()
 
         elif self.al_method == 'k_center':
-            new_batch_ids = self._k_center_query(input)
+            new_batch_ids = self._k_center_query(inputs)
 
         elif self.al_method == 'bayes':
-            new_batch_ids = self._bayes_query(input)
+            new_batch_ids = self._bayes_query(inputs)
 
         elif self.al_method == 'msg_mask':
-            new_batch_ids = self._msg_mask_query(input)
+            new_batch_ids = self._msg_mask_query(inputs)
 
         else:
             raise ValueError
@@ -80,30 +88,38 @@ class AL_sampler(object):
         return new_batch_ids
 
 
-    def _k_center_query(self, input):
+
+
+
+    # accelerated k center
+    def _k_center_query(self, inputs):
         time0 = time.time()
 
+        new_batch_ids_ = []
         new_batch_ids = []
-        # pool = mp.Pool(process_num)
+        # calculate the minimum dist using a chunked way
+        un_embeddings = inputs[self.data_ids]
+        core_embeddings = inputs[self.core_ids]  # core point is the data already choosen
+        min_dist = 1e5*torch.ones(self.total_data_num).to(un_embeddings.device)
+        min_dist[self.core_ids] = 0
+        chunk_ids = chunks(range(un_embeddings.size(0)), int(math.sqrt(un_embeddings.size(0))))
+        un_ebd_a = torch.sum(un_embeddings ** 2, dim=1)
+        c_ebd_b = torch.sum(core_embeddings ** 2, dim=1)
+        for i in range(len(chunk_ids)):
+            min_dist[self.data_ids[chunk_ids[i]]] = un_ebd_a[chunk_ids[i]] + torch.min(c_ebd_b - 2 * un_embeddings[chunk_ids[i]] @ core_embeddings.t(), dim=1)[0]
         for id in range(self.batch_data_num):
-            un_embeddings = input[self.data_ids]
-            core_embeddings = input[self.core_ids]
-            minimal_cover_dist = torch.zeros(len(self.data_ids)).to(un_embeddings.device)
-            chunk_ids = chunks(range(un_embeddings.size(0)), int(math.sqrt(un_embeddings.size(0))))
-            un_ebd_a = torch.sum(un_embeddings ** 2, dim=1)
-            c_ebd_b = torch.sum(core_embeddings ** 2, dim=1)
-            for i in range(len(chunk_ids)):
-                # minimal_cover_dist[i] = torch.min(torch.norm(un_embeddings[i]-core_embeddings,p=2,dim=1,keepdim=False))
-                minimal_cover_dist[chunk_ids[i]] = \
-                torch.min(c_ebd_b - 2 * un_embeddings[chunk_ids[i]] @ core_embeddings.t(), dim=1)[0]
-
-            core_point_id = torch.argmax(minimal_cover_dist + un_ebd_a).cpu().numpy()  # id in data_ids
-            new_batch_ids.append(self.data_ids[core_point_id])
-            self.data_ids = np.delete(self.data_ids, core_point_id)
-            # print(id)
+            new_point_id_ = int(torch.argmax(min_dist[self.data_ids]))  # id relative to query_data_ids
+            new_point_id = self.data_ids[new_point_id_]
+            new_batch_ids_.append(new_point_id_)
+            new_batch_ids.append(new_point_id)
+            distance_new = torch.sum((inputs[new_point_id]-inputs)**2,dim=1)
+            min_dist = torch.min(torch.stack([min_dist,distance_new],dim=0),dim=0)[0]
+            print(id)
         self.core_ids = np.sort(np.concatenate([self.core_ids, new_batch_ids]))
+        self.data_ids = np.delete(self.data_ids, new_batch_ids_)
         print('query new data {}'.format(time.time() - time0))
         return new_batch_ids
+
 
 
     def _variance_query(self,preds):
@@ -120,12 +136,12 @@ class AL_sampler(object):
         return new_batch_ids
 
 
-    def _bayes_query(self, input):
-        return self._variance_query(input)
+    def _bayes_query(self, inputs):
+        return self._variance_query(inputs)
 
 
-    def _msg_mask_query(self, input):
-        return self._variance_query(input)
+    def _msg_mask_query(self, inputs):
+        return self._variance_query(inputs)
 
 
 
@@ -136,11 +152,11 @@ class Inferencer(object):
             method:         AL method in 'random' 'bayes' 'k_center'
 
         run------------
-            model:          the input model like Schnet or MC_schnet
+            model:          the inputs model like Schnet or MC_schnet
             dataset:     the data set( class inherited from torch: Dataset)
             device:         device
 
-            Output: the input for AL sampling(eg. variance for Bayes AL method)
+            Output: the inputs for AL sampling(eg. variance for Bayes AL method)
     '''
     def __init__(self,args,method='random'):
         self.args = args
@@ -178,8 +194,8 @@ class Inferencer(object):
             for idx, (mols, _) in enumerate(dataloader):
                 g = dgl.batch([mol.ful_g for mol in mols])
                 g.to(device)
-                score = model(g)
-                scores.append(score)
+                res = model.inference(g)
+                scores.append(res)
 
         scores = torch.cat(scores, dim=0)
         print('inference {}'.format(time.time() - time0))
@@ -236,7 +252,7 @@ class Trainer(object):
     '''class for finetuning the neural network
         method: how the finetuning method stops
             1. fixed_epochs: finetune only fixed epochs
-            2. varying_epochs: finetune epochs are decided by an input list
+            2. varying_epochs: finetune epochs are decided by an inputs list
             3. by_valid: finetune stops when MAE on validation set increases
     '''
     def __init__(self,args,total_iters,method='fixed_epochs',ft_epochs=None):
@@ -274,17 +290,17 @@ class Trainer(object):
     # augments:
     #   info:          a dict contains the training information
     #   ft_epochs:     list of ft_epochs
-    def finetune(self, input):
+    def finetune(self, inputs):
     # def finetune(self,train_dataset,model,optimizer,writer,info,device):
-        train_dataset = input['train_dataset']
-        model = input['model']
-        optimizer = input['optimizer']
-        writer = input['writer']
-        info = input['info']
-        device = input['device']
+        train_dataset = inputs['train_dataset']
+        model = inputs['model']
+        optimizer = inputs['optimizer']
+        writer = inputs['writer']
+        info = inputs['info']
+        device = inputs['device']
 
-        if 'val_dataset' in input.keys():
-            val_dataset = input['val_dataset']
+        if 'val_dataset' in inputs.keys():
+            val_dataset = inputs['val_dataset']
         else:
             val_dataset = None
 
@@ -441,6 +457,108 @@ class Trainer(object):
 
 
 
+
+
+
+def check_point_test(settings,train_dataset,test_dataset,device):
+
+    dim, cutoff, output_dim, width, n_conv, norm, atom_ref, pre_train = settings['dim'], settings['cutoff'], settings['output_dim'], settings['width'], settings['n_conv'], settings['norm'], settings['atom_ref'], settings['pre_train']
+    lr, epochs, batch_size = settings['lr'], settings['epochs'], settings['batch_size']
+    model = SchNetModel(dim=dim, cutoff=cutoff, output_dim=output_dim,width= width, n_conv=n_conv, norm=norm, atom_ref=atom_ref, pre_train=pre_train)
+    optimizer = Adam(model.parameters(),lr=lr)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, collate_fn=batcher,
+                              shuffle=True, num_workers=0)
+    train_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, collate_fn=batcher,
+                              shuffle=True, num_workers=0)
+    print('Start checkpoint testing ')
+    print('dataset mean {} std {}'.format(train_dataset.mean.item(), train_dataset.std.item()))
+    model.set_mean_std(train_dataset.mean, train_dataset.std)
+    model.to(device)
+
+    # optimizer = optimizer_(model.parameters(), lr=args.lr)
+    loss_fn = nn.MSELoss()
+    MAE_fn = nn.L1Loss()
+    mse_meter = meter.AverageValueMeter()
+    mae_meter = meter.AverageValueMeter()
+    test_mae_meter = meter.AverageValueMeter()
+    train_mae = []
+    test_mae = []
+    for epoch in range(epochs):
+        mse_meter.reset()
+        mae_meter.reset()
+        model.train()
+        for idx, (mols, label) in enumerate(train_loader):
+            g = dgl.batch([mol.ful_g for mol in mols])
+            g.to(device)
+
+            label = label.to(device)
+            res = model(g).squeeze()  # use SchEmbedding model
+            loss = loss_fn(res, label)
+            mae = MAE_fn(res, label)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            mae_meter.add(mae.detach().item())
+            mse_meter.add(loss.detach().item())
+        print("Epoch {:2d}/{:2d}, training: loss: {:.7f}, mae: {:.7f}".format(epoch, epochs,mse_meter.value()[0],mae_meter.value()[0]))
+        train_mae.append(mae_meter.value()[0])
+        if (epoch+1)% 10 ==0 :
+            with torch.no_grad():
+                test_mae_meter.reset()
+                for idx, (mols, label) in enumerate(train_loader):
+                    g = dgl.batch([mol.ful_g for mol in mols])
+                    g.to(device)
+                    label = label.to(device)
+                    res = model(g).squeeze()  # use SchEmbedding model
+                    mae = MAE_fn(res, label)
+                    test_mae_meter.add(mae.detach().item())
+            print('checkpoint test mae {}'.format(test_mae_meter.value()[0]))
+            test_mae.append(test_mae_meter.value()[0])
+    return train_mae, test_mae
+
+
+
+
+
+def save_cpt_xlsx(cpk_path,cpk_datas,train_mae, test_mae):
+    train_mae = {cpk_datas[i]:train_mae[i] for i in range(len(train_mae))}
+    test_mae = {cpk_datas[i]:test_mae[i] for i in range(len(test_mae))}
+    df1 = pd.DataFrame(train_mae)
+    df2 = pd.DataFrame(test_mae)
+
+    writer = pd.ExcelWriter(cpk_path,engine='xlsxwriter')
+
+    df1.to_excel(writer,sheet_name='train_mae')
+    df2.to_excel(writer,sheet_name='test_mae')
+
+    writer.save()
+
+    # def _k_center_query(self, input):
+    #     time0 = time.time()
+    #
+    #     new_batch_ids = []
+    #     # pool = mp.Pool(process_num)
+    #     for id in range(self.batch_data_num):
+    #         un_embeddings = input[self.data_ids]
+    #         core_embeddings = input[self.core_ids]
+    #         minimal_cover_dist = torch.zeros(len(self.data_ids)).to(un_embeddings.device)
+    #         chunk_ids = chunks(range(un_embeddings.size(0)), int(math.sqrt(un_embeddings.size(0))))
+    #         un_ebd_a = torch.sum(un_embeddings ** 2, dim=1)
+    #         c_ebd_b = torch.sum(core_embeddings ** 2, dim=1)
+    #         for i in range(len(chunk_ids)):
+    #             # minimal_cover_dist[i] = torch.min(torch.norm(un_embeddings[i]-core_embeddings,p=2,dim=1,keepdim=False))
+    #             minimal_cover_dist[chunk_ids[i]] = \
+    #                 torch.min(c_ebd_b - 2 * un_embeddings[chunk_ids[i]] @ core_embeddings.t(), dim=1)[0]
+    #
+    #         core_point_id = torch.argmax(minimal_cover_dist + un_ebd_a).cpu().numpy()  # id in data_ids
+    #         new_batch_ids.append(self.data_ids[core_point_id])
+    #         self.data_ids = np.delete(self.data_ids, core_point_id)
+    #         # print(id)
+    #     self.core_ids = np.sort(np.concatenate([self.core_ids, new_batch_ids]))
+    #     print('query new data {}'.format(time.time() - time0))
+    #     return new_batch_ids
 
 
 

@@ -1,10 +1,19 @@
+#!/usr/bin/env python  
+#-*- coding:utf-8 _*-
+
+
+
 import torch as th
-import torch.nn as nn
 import numpy as np
-import dgl
+import torch.nn as nn
 import dgl.function as fn
 from torch.nn import Softplus
+import random
+import dgl
+from torch.distributions.categorical import Categorical
 
+'''Message Masking Schnet but mask message when training and testing
+'''
 #cannot first write device in model
 class AtomEmbedding(nn.Module):
     """
@@ -135,7 +144,7 @@ class RBFLayer(nn.Module):
         g.apply_edges(self.dis2rbf)
         return g.edata["rbf"]
 
-
+'''Message Masking on this module'''
 class CFConv(nn.Module):
     """
     The continuous-filter convolution layer in SchNet.
@@ -143,7 +152,7 @@ class CFConv(nn.Module):
         (two of them have activation funct).
     """
 
-    def __init__(self, rbf_dim, dim=64, act="sp"):
+    def __init__(self, rbf_dim, dim=64, act="sp", mask_rate=0.2):
         """
         Args:
             rbf_dim: the dimsion of the RBF layer
@@ -153,7 +162,9 @@ class CFConv(nn.Module):
         super(CFConv,self).__init__()
         self._rbf_dim = rbf_dim
         self._dim = dim
+        self._rbf_threshold = 1e-2
 
+        self.mask_rate = mask_rate
         self.linear_layer1 = nn.Linear(self._rbf_dim, self._dim)
         self.linear_layer2 = nn.Linear(self._dim, self._dim)
 
@@ -164,10 +175,37 @@ class CFConv(nn.Module):
 
     def update_edge(self, edges):
         rbf = edges.data["rbf"]
+
+        valid_msg_id = th.nonzero(rbf.max(dim=1)[0] > 1e-2).squeeze()
+        msk_msg_id = valid_msg_id[th.randint(0,valid_msg_id.shape[0],[int(self.mask_rate*valid_msg_id.shape[0])])]
+
+
         h = self.linear_layer1(rbf)
         h = self.activation(h)
         h = self.linear_layer2(h)
+        h[msk_msg_id] = 0
+
         return {"h": h}
+
+    # def msk_update_edge(self,edges):
+    #     rbf = edges.data["rbf"]
+    #
+    #     valid_msg_id = th.nonzero(rbf.max(dim=1)[0] > 1e-2).squeeze()
+    #
+    #     # msk_d = Categorical(th.ones(valid_msg_id.shape[0]))
+    #     #
+    #     # msk_msg_id = msk_d.sample_n(int(self.mask_rate*valid_msg_id.shape[0]))
+    #     # msk_msg_id = valid_msg_id[th.nonzero(th.bernoulli(self.mask_rate*th.ones(valid_msg_id.shape[0]))).squeeze()]
+    #     msk_msg_id = valid_msg_id[th.randint(0,valid_msg_id.shape[0],[int(self.mask_rate*valid_msg_id.shape[0])])]
+    #
+    #     h = self.linear_layer1(rbf)
+    #     h = self.activation(h)
+    #     h = self.linear_layer2(h)
+    #
+    #     h[msk_msg_id] = 0
+    #     return {"h": h}
+
+
 
     def forward(self, g):
         g.apply_edges(self.update_edge)
@@ -175,15 +213,24 @@ class CFConv(nn.Module):
                      reduce_func=fn.sum('neighbor_info', 'new_node'))
         return g.ndata["new_node"]
 
+    # def message_masking_inference(self,g):
+    #     g.apply_edges(self.msk_update_edge)
+    #
+    #     g.update_all(message_func=fn.u_mul_e('new_node', 'h', 'neighbor_info'),
+    #                  reduce_func=fn.sum('neighbor_info', 'new_node'))
+    #     return g.ndata["new_node"]
 
-class Interaction(nn.Module):
+
+class MM_Interaction(nn.Module):
     """
     The interaction layer in the SchNet model.
     """
 
-    def __init__(self, rbf_dim, dim):
-        super(Interaction,self).__init__()
+    def __init__(self, rbf_dim, dim, mask_rate=0.2):
+        super(MM_Interaction,self).__init__()
         self._node_dim = dim
+
+        self.mask_rate = mask_rate
         self.activation = nn.Softplus(beta=0.5, threshold=14)
         self.node_layer1 = nn.Linear(dim, dim, bias=False)
         self.cfconv = CFConv(rbf_dim, dim, act=self.activation)
@@ -201,7 +248,20 @@ class Interaction(nn.Module):
         return g.ndata["node"]
 
 
-class SchEmbedding(nn.Module):
+
+    # def message_masking_inference(self,g):
+    #     g.ndata["new_node"] = self.node_layer1(g.ndata["node"])
+    #     cf_node = self.cfconv.message_masking_inference(g)
+    #     cf_node_1 = self.node_layer2(cf_node)
+    #     cf_node_1a = self.activation(cf_node_1)
+    #     new_node = self.node_layer3(cf_node_1a)
+    #     g.ndata["node"] = g.ndata["node"] + new_node
+    #     return g.ndata["node"]
+
+
+
+
+class Msk_SchNetModel(nn.Module):
     """
     SchNet Model from:
         Schütt, Kristof, et al.
@@ -218,6 +278,7 @@ class SchEmbedding(nn.Module):
                  norm=False,
                  atom_ref=None,
                  pre_train=None,
+                 mask_rate=0.2
                  ):
         """
         Args:
@@ -230,7 +291,7 @@ class SchEmbedding(nn.Module):
                       or set to None with random initialization
             norm: normalization
         """
-        super(SchEmbedding,self).__init__()
+        super(Msk_SchNetModel,self).__init__()
         self.name = "SchNet"
         self._dim = dim
         self.cutoff = cutoff
@@ -239,6 +300,7 @@ class SchEmbedding(nn.Module):
         self.atom_ref = atom_ref
         self.norm = norm
         self.activation = ShiftSoftplus()
+        self.mask_rate = mask_rate
 
         if atom_ref is not None:
             self.e0 = AtomEmbedding(1, pre_train=atom_ref)
@@ -248,7 +310,7 @@ class SchEmbedding(nn.Module):
             self.embedding_layer = AtomEmbedding(pre_train=pre_train)
         self.rbf_layer = RBFLayer(0, cutoff, width)
         self.conv_layers = nn.ModuleList(
-            [Interaction(self.rbf_layer._fan_out, dim) for i in range(n_conv)])
+            [MM_Interaction(self.rbf_layer._fan_out, dim,self.mask_rate) for i in range(n_conv)])
 
         self.atom_dense_layer1 = nn.Linear(dim, 64)
         self.atom_dense_layer2 = nn.Linear(64, output_dim)
@@ -261,9 +323,7 @@ class SchEmbedding(nn.Module):
     def forward(self, g):
         # g_list list of molecules
 
-        # g = dgl.batch([mol.ful_g for mol in mol_list])
         g.edata['distance'] = g.edata['distance'].reshape(-1,1)
-        # g.to(device)
 
         self.embedding_layer(g)
         if self.atom_ref is not None:
@@ -273,10 +333,9 @@ class SchEmbedding(nn.Module):
             self.conv_layers[idx](g)
 
         atom = self.atom_dense_layer1(g.ndata["node"])
-        g.ndata['atom'] = atom
-        res = dgl.mean_nodes(g, "atom")
         atom = self.activation(atom)
-        g.ndata["res"] = atom
+        res = self.atom_dense_layer2(atom)
+        g.ndata["res"] = res
 
         if self.atom_ref is not None:
             g.ndata["res"] = g.ndata["res"] + g.ndata["e0"]
@@ -284,38 +343,36 @@ class SchEmbedding(nn.Module):
         if self.norm:
             g.ndata["res"] = g.ndata[
                 "res"] * self.std_per_atom + self.mean_per_atom
-
-        preds = self.atom_dense_layer2(dgl.mean_nodes(g,"res"))
-        return preds
-
-
-    def inference(self,g):
-        # g_list list of molecules
-
-        # g = dgl.batch([mol.ful_g for mol in mol_list])
-        g.edata['distance'] = g.edata['distance'].reshape(-1,1)
-        # g.to(device)
-
-        self.embedding_layer(g)
-        if self.atom_ref is not None:
-            self.e0(g, "e0")
-        self.rbf_layer(g)
-        for idx in range(self.n_conv):
-            self.conv_layers[idx](g)
-
-        atom = self.atom_dense_layer1(g.ndata["node"])
-        g.ndata['atom'] = atom
-        res = dgl.mean_nodes(g, "atom")
-        atom = self.activation(atom)
-        g.ndata["res"] = atom
-
-        if self.atom_ref is not None:
-            g.ndata["res"] = g.ndata["res"] + g.ndata["e0"]
-
-        if self.norm:
-            g.ndata["res"] = g.ndata[
-                                 "res"] * self.std_per_atom + self.mean_per_atom
-
-        # preds = self.atom_dense_layer2(dgl.mean_nodes(g, "res"))
+        res = dgl.mean_nodes(g, "res")
         return res
 
+
+    # def inference(self,g):
+    #     # g_list list of molecules
+    #
+    #     g.edata['distance'] = g.edata['distance'].reshape(-1, 1)
+    #
+    #     self.embedding_layer(g)
+    #     if self.atom_ref is not None:
+    #         self.e0(g, "e0")
+    #     self.rbf_layer(g)
+    #     for idx in range(self.n_conv):
+    #         self.conv_layers[idx].message_masking_inference(g)
+    #
+    #     atom = self.atom_dense_layer1(g.ndata["node"])
+    #     atom = self.activation(atom)
+    #     res = self.atom_dense_layer2(atom)
+    #     g.ndata["res"] = res
+    #
+    #     if self.atom_ref is not None:
+    #         g.ndata["res"] = g.ndata["res"] + g.ndata["e0"]
+    #
+    #     if self.norm:
+    #         g.ndata["res"] = g.ndata[
+    #                              "res"] * self.std_per_atom + self.mean_per_atom
+    #     res = dgl.mean_nodes(g, "res")
+    #     return res
+
+
+if __name__ == "__main__":
+    pass

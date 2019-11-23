@@ -9,6 +9,8 @@ from torch.nn import DataParallel
 import os
 import torch.utils.data as data
 import random
+import time
+from sklearn.cluster import KMeans
 # import torch.multiprocessing as mp
 # torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -269,11 +271,12 @@ def pairwise_L2(A,B):
 
 # torch tensor data_num*embed_dim, calculate by L2 distance
 # show stats: calculate mean MSE (mean on L2 and clusters)
-def k_medoid(embeddings, cluster_num, iters, show_stats=False):
+def k_medoid(embeddings, cluster_num, iters, center_ids=None, show_stats=False):
     # init
-    center_ids = random.sample(range(embeddings.shape[0]),cluster_num)
+    if center_ids is None:
+        center_ids = random.sample(range(embeddings.shape[0]),cluster_num)
     cluster_centers = embeddings[center_ids]
-    for i in range(iters):
+    for iteration in range(iters):
 
         distances = pairwise_L2(embeddings, cluster_centers)
         data_tags = torch.argmin(distances,dim=1)
@@ -288,7 +291,8 @@ def k_medoid(embeddings, cluster_num, iters, show_stats=False):
 
         [cls_ids[int(data_tags[i])].append(i) for i in range(embeddings.shape[0])]
         for i in range(cluster_num):
-            center_ids[i] = cls_ids[i][int(torch.argmin(torch.sum((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1)))]
+            if len(cls_ids[i]):
+                center_ids[i] = cls_ids[i][int(torch.argmin(torch.sum((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1)))]
         # update cluster centers
         cluster_centers = embeddings[center_ids]
 
@@ -297,13 +301,63 @@ def k_medoid(embeddings, cluster_num, iters, show_stats=False):
             for i in range(cluster_num):
                 E += torch.sum(torch.mean((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1))
             E  = E / cluster_num
-            print('Iteration {} Mean MSE {}'.format(i+1,E))
+            print('Iteration {} Mean MSE {}'.format(iteration+1,E))
     return center_ids
 
 
 
+def k_center(embeddings, cluster_num):
+    center_ids = []
+    center_ids.append(random.choice(range(embeddings.shape[0])))
+    cluster_center = embeddings[center_ids[-1]].unsqueeze(0)
+    distances = 1e9 * torch.ones([embeddings.shape[0], cluster_num - 1])
+    min_dist = 1e9*torch.ones(embeddings.shape[0])
+    for k in range(cluster_num-1):
+        # anchor_ids = random.sample(range(embeddings.shape[0]),embeddings.shape[0]//10)
+        distances[:,k] = torch.sum((embeddings-cluster_center)**2,dim=1)
+        min_dist = torch.min(torch.stack([min_dist,distances[:,k]],dim=0),dim=0)[0]
+        center_ids.append(int(torch.argmax(min_dist)))
+        cluster_center = embeddings[center_ids[-1]]
+
+    return center_ids
 
 
+
+def k_medoids_pp(embeddings, cluster_num, iters, show_stats=True):
+    # seed initialization
+    time0 = time.time()
+
+    center_ids = k_center(embeddings,cluster_num)
+    if show_stats:
+        print(time.time()-time0)
+        print('seed initialization finished')
+    cluster_centers = embeddings[center_ids]
+    for iteration in range(iters):
+        distances = pairwise_L2(embeddings, cluster_centers)
+        data_tags = torch.argmin(distances,dim=1)
+        n_count = torch.ones_like(embeddings).float()
+        # see: https://stackoverflow.com/questions/58007127/pytorch-differentiable-conditional-index-based-sum
+        n_centers = torch.zeros([data_tags.max()+1,embeddings.shape[1]])
+        avg_centers = torch.zeros([data_tags.max()+1, embeddings.shape[1]])
+        n_centers.index_add_(0,data_tags,n_count)
+        avg_centers.index_add_(0,data_tags, embeddings)
+        avg_centers = avg_centers / n_centers
+        cls_ids = [[] for _ in range(cluster_num)]  # record the data ids of each cluster
+
+        [cls_ids[int(data_tags[i])].append(i) for i in range(embeddings.shape[0])]
+        for i in range(cluster_num):
+            if len(cls_ids[i]):
+                center_ids[i] = cls_ids[i][int(torch.argmin(torch.sum((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1)))]
+        # update cluster centers
+        cluster_centers = embeddings[center_ids]
+
+        if show_stats:
+            E = 0
+            for i in range(cluster_num):
+                E += torch.sum(torch.mean((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1))
+            E  = E / cluster_num
+            print('Iteration {} Mean MSE {}'.format(iteration+1,E))
+    return center_ids
 
 
 def mol2nx(mol):
