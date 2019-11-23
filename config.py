@@ -32,11 +32,11 @@ def make_args():
     parser = ArgumentParser()
     parser.add_argument('--batchsize', type=int, default=64,
                         help='batch size')
-    parser.add_argument("--epochs", type=int, default=200,
+    parser.add_argument("--epochs", type=int, default=10,
                         help="number of epochs")
     parser.add_argument('--use_tb', type=bool, default=True,
                         help='whether use tensorboard for logs')
-    parser.add_argument('--device', type=int, default=1,
+    parser.add_argument('--device', type=int, default=0,
                         help='which gpu to use if any (default: 0)')
     parser.add_argument('--dataset', type=str, default='qm9',
                         help='which dataset to use')
@@ -60,8 +60,8 @@ def make_args():
 
 
     # universal active learning settings
-    parser.add_argument('--batch_data_num', default=100)
-    parser.add_argument('--test_freq',default=5)
+    parser.add_argument('--batch_data_num', default=5000)
+    parser.add_argument('--test_freq',default=1)
 
 
     #qbc settings
@@ -85,12 +85,13 @@ def make_args():
 
 
 
+
     # run_al settings
-    parser.add_argument('--al_method',type=str,default='random',
+    parser.add_argument('--al_method',type=str,default='k_center',
                         help='AL method in run_al.py, must be in random, bayes, k_center, msg_mask, dropout')
     parser.add_argument('--ft_method',type=str,default='fixed_epochs',
                         help='finetuning method in run_al.py, must be in fixed_epochs, varying_epochs, by_valid')
-    parser.add_argument('--ft_epochs',type=int,default=5,
+    parser.add_argument('--ft_epochs',type=int,default=20,
                         help='the max epochs number for fixed epochs finetuning')
     parser.add_argument('--re_init',type=bool,default=False,
                         help='whether to re-initialize the model after each iteration, advised to use by_valid ft_method if set True')
@@ -100,6 +101,8 @@ def make_args():
                         help='how much data to use in the original dataset')
 
 
+    parser.add_argument('--test_checkpoint',type=str,default=True,
+                        help='whether re-train a big model to test the mae at the checkpoint dataset like [10000,20000,30000,40000]')
 
 
     args = parser.parse_args()

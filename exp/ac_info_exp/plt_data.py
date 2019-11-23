@@ -11,6 +11,11 @@ file_lists = ['qm9_bayes_by_valid_1114_22_31.txt',
               'qm9_k_center_by_valid_1114_22_12.txt',
               'qm9_random_by_valid_1115_13_02.txt',
               'qm9_k_center_by_valid_1115_09_07.txt',
+              
+              
+              'qm9_random_fixed_epochs_1119_16_35.txt',
+              'qm9_k_center_fixed_epochs_1119_17_10.txt',
+              'qm9_msg_mask_fixed_epochs_1118_11_07.txt'
               ]
 
 datas = []

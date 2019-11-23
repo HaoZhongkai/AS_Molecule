@@ -92,34 +92,43 @@ def smi2vec(smi):
 
 
 
-qm9_data_path = config.train_pkl['qm9']
-mols = pickle.load(open(qm9_data_path,'rb'))
-smis = [mol.smi for mol in mols]
+qm9_data_path_train = config.train_pkl['qm9']
+qm9_data_path_test = config.test_pkl['qm9']
+mols_train = pickle.load(open(qm9_data_path_train,'rb'))
+smis_train = [mol.smi for mol in mols_train]
+mols_test = pickle.load(open(qm9_data_path_test,'rb'))
+smis_test = [mol.smi for mol in mols_test]
+
+
 
 time0 = time.time()
-fingerprints = [smi2vec(smi) for smi in smis]
+fingerprints_train = [smi2vec(smi) for smi in smis_train]
+fingerprints_test = [smi2vec(smi) for smi in smis_test]
+
 n_components = 20
 
 print('time {}'.format(time.time() - time0))
 time0 = time.time()
 
 pca = PCA(n_components=n_components)
-pca.fit(fingerprints)
+pca.fit(fingerprints_train)
 
-qm9_pca = pca.transform(fingerprints)
-
+qm9_pca = pca.transform(fingerprints_train)
+qm9_pca_te = pca.transform(fingerprints_test)
 
 
 
 
 print('time {}'.format(time.time()-time0))
 plt.scatter(qm9_pca[:,0],qm9_pca[:,1],marker='.')
+plt.scatter(qm9_pca_te[:,0],qm9_pca_te[:,1],marker='.')
+
 plt.savefig('qm9_pca.png')
 
-qm9_pca_t = torch.Tensor(qm9_pca)
-save_path = config.DATASET_PATH['qm9']+'/qm9_fingerprint_'+str(n_components)+'.pkl'
+# qm9_pca_t = torch.Tensor(qm9_pca)
+# save_path = config.DATASET_PATH['qm9']+'/qm9_fingerprint_'+str(n_components)+'.pkl'
 
-pickle.dump(qm9_pca_t,open(save_path,'wb'))
+# pickle.dump(qm9_pca_t,open(save_path,'wb'))
 
 
 
