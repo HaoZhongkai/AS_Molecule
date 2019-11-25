@@ -289,11 +289,12 @@ class SchEmbedding(nn.Module):
         return preds
 
 
+
     def inference(self,g):
         # g_list list of molecules
 
         # g = dgl.batch([mol.ful_g for mol in mol_list])
-        g.edata['distance'] = g.edata['distance'].reshape(-1,1)
+        g.edata['distance'] = g.edata['distance'].reshape(-1, 1)
         # g.to(device)
 
         self.embedding_layer(g)
@@ -306,16 +307,21 @@ class SchEmbedding(nn.Module):
         atom = self.atom_dense_layer1(g.ndata["node"])
         g.ndata['atom'] = atom
         res = dgl.mean_nodes(g, "atom")
-        atom = self.activation(atom)
-        g.ndata["res"] = atom
-
-        if self.atom_ref is not None:
-            g.ndata["res"] = g.ndata["res"] + g.ndata["e0"]
-
-        if self.norm:
-            g.ndata["res"] = g.ndata[
-                                 "res"] * self.std_per_atom + self.mean_per_atom
+        # atom = self.activation(atom)
+        # g.ndata["res"] = atom
+        #
+        # if self.atom_ref is not None:
+        #     g.ndata["res"] = g.ndata["res"] + g.ndata["e0"]
+        #
+        # if self.norm:
+        #     g.ndata["res"] = g.ndata[
+        #                          "res"] * self.std_per_atom + self.mean_per_atom
 
         # preds = self.atom_dense_layer2(dgl.mean_nodes(g, "res"))
         return res
+
+
+
+
+
 

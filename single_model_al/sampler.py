@@ -114,7 +114,7 @@ class AL_sampler(object):
             new_batch_ids.append(new_point_id)
             distance_new = torch.sum((inputs[new_point_id]-inputs)**2,dim=1)
             min_dist = torch.min(torch.stack([min_dist,distance_new],dim=0),dim=0)[0]
-            print(id)
+            # print(id)
         self.core_ids = np.sort(np.concatenate([self.core_ids, new_batch_ids]))
         self.data_ids = np.delete(self.data_ids, new_batch_ids_)
         print('query new data {}'.format(time.time() - time0))
@@ -463,12 +463,12 @@ class Trainer(object):
 def check_point_test(settings,train_dataset,test_dataset,device):
 
     dim, cutoff, output_dim, width, n_conv, norm, atom_ref, pre_train = settings['dim'], settings['cutoff'], settings['output_dim'], settings['width'], settings['n_conv'], settings['norm'], settings['atom_ref'], settings['pre_train']
-    lr, epochs, batch_size = settings['lr'], settings['epochs'], settings['batch_size']
+    lr, epochs, batch_size, n_patience = settings['lr'], settings['epochs'], settings['batch_size'], settings['n_patience']
     model = SchNetModel(dim=dim, cutoff=cutoff, output_dim=output_dim,width= width, n_conv=n_conv, norm=norm, atom_ref=atom_ref, pre_train=pre_train)
     optimizer = Adam(model.parameters(),lr=lr)
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, collate_fn=batcher,
                               shuffle=True, num_workers=0)
-    train_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, collate_fn=batcher,
+    test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, collate_fn=batcher,
                               shuffle=True, num_workers=0)
     print('Start checkpoint testing ')
     print('dataset mean {} std {}'.format(train_dataset.mean.item(), train_dataset.std.item()))
@@ -483,7 +483,10 @@ def check_point_test(settings,train_dataset,test_dataset,device):
     test_mae_meter = meter.AverageValueMeter()
     train_mae = []
     test_mae = []
-    for epoch in range(epochs):
+    best_test_mae = 1e8
+    patience = 0
+    epoch = 0
+    while(patience<=n_patience):
         mse_meter.reset()
         mae_meter.reset()
         model.train()
@@ -502,20 +505,26 @@ def check_point_test(settings,train_dataset,test_dataset,device):
 
             mae_meter.add(mae.detach().item())
             mse_meter.add(loss.detach().item())
-        print("Epoch {:2d}/{:2d}, training: loss: {:.7f}, mae: {:.7f}".format(epoch, epochs,mse_meter.value()[0],mae_meter.value()[0]))
+        print("Epoch {:2d}, training: loss: {:.7f}, mae: {:.7f}".format(epoch,mse_meter.value()[0],mae_meter.value()[0]))
         train_mae.append(mae_meter.value()[0])
-        if (epoch+1)% 10 ==0 :
-            with torch.no_grad():
-                test_mae_meter.reset()
-                for idx, (mols, label) in enumerate(train_loader):
-                    g = dgl.batch([mol.ful_g for mol in mols])
-                    g.to(device)
-                    label = label.to(device)
-                    res = model(g).squeeze()  # use SchEmbedding model
-                    mae = MAE_fn(res, label)
-                    test_mae_meter.add(mae.detach().item())
-            print('checkpoint test mae {}'.format(test_mae_meter.value()[0]))
-            test_mae.append(test_mae_meter.value()[0])
+        epoch += 1
+        with torch.no_grad():
+            test_mae_meter.reset()
+            for idx, (mols, label) in enumerate(test_loader):
+                g = dgl.batch([mol.ful_g for mol in mols])
+                g.to(device)
+                label = label.to(device)
+                res = model(g).squeeze()  # use SchEmbedding model
+                mae = MAE_fn(res, label)
+                test_mae_meter.add(mae.detach().item())
+        test_mae.append(test_mae_meter.value()[0])
+        if test_mae[-1]>best_test_mae:
+            patience += 1
+        else:
+            best_test_mae = test_mae[-1]
+            patience = 0
+        print('checkpoint test mae {} patience {}'.format(test_mae_meter.value()[0], patience))
+
     return train_mae, test_mae
 
 
@@ -523,16 +532,28 @@ def check_point_test(settings,train_dataset,test_dataset,device):
 
 
 def save_cpt_xlsx(cpk_path,cpk_datas,train_mae, test_mae):
-    train_mae = {cpk_datas[i]:train_mae[i] for i in range(len(train_mae))}
-    test_mae = {cpk_datas[i]:test_mae[i] for i in range(len(test_mae))}
-    df1 = pd.DataFrame(train_mae)
-    df2 = pd.DataFrame(test_mae)
+    df1s = []
+    df2s = []
+    t_mae_min = []
+    for i in range(len(train_mae)):
+        df1s.append(pd.DataFrame({'data'+str(cpk_datas[i]):train_mae[i]}))
+        df2s.append(pd.DataFrame({'data'+str(cpk_datas[i]):test_mae[i]}))
+        t_mae_min.append(np.min(test_mae[i]))
+
+
+    df1 = pd.concat(df1s,ignore_index=False,axis=1)
+    df2 = pd.concat(df2s,ignore_index=False,axis=1)
+    df3 = pd.DataFrame({'test_mae':t_mae_min})
+    # train_mae = {'data'+str(cpk_datas[i]):train_mae[i] for i in range(len(train_mae))}
+    # test_mae = {'data'+str(cpk_datas[i]):test_mae[i] for i in range(len(test_mae))}
+    # df1 = pd.DataFrame(train_mae)
+    # df2 = pd.DataFrame(test_mae)
 
     writer = pd.ExcelWriter(cpk_path,engine='xlsxwriter')
 
     df1.to_excel(writer,sheet_name='train_mae')
     df2.to_excel(writer,sheet_name='test_mae')
-
+    df3.to_excel(writer,sheet_name='t_min_mae')
     writer.save()
 
     # def _k_center_query(self, input):

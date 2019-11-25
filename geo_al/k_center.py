@@ -18,7 +18,6 @@ class K_center(object):
     def query(self,embeddings,process_num=10):
         time0 = time.time()
 
-
         new_batch = []
         # pool = mp.Pool(process_num)
         for id in range(self.batch_data_num):
@@ -42,7 +41,7 @@ class K_center(object):
 
 
     def random_query(self):
-        new_batch_ids = np.sort(random.sample(self.data_ids,self.batch_data_num))
+        new_batch_ids = np.sort(random.sample(list(self.data_ids),self.batch_data_num))
         self.data_ids = np.delete(self.data_ids,new_batch_ids)
         return new_batch_ids
 
