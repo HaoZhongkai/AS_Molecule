@@ -9,7 +9,7 @@ import time
 import random
 from torchnet import meter
 from tensorboardX import SummaryWriter
-
+from geo_al.cnn import *
 class CNN_Cifar(nn.Module):
     def __init__(self):
         super(CNN_Cifar,self).__init__()
@@ -148,7 +148,10 @@ def test(args, test_set,model,device):
 def k_center_learn(args,config,train_datas,test_datas,model,optimizer_,writer,device):
     ac_info = []
     label_rates = []
-    print('start k-center active learning ')
+    if args.query_method is 'k_center':
+        print('start k-center active learning ')
+    else:
+        print('start random sampling ')
     t_iterations = int((train_datas[0].shape[0]-args.init_data_num)/args.batch_data_num)  #discard tail data
     total_data_num = t_iterations*args.batch_data_num+args.init_data_num
     train_ids = random.sample(range(total_data_num),args.init_data_num)
@@ -174,7 +177,6 @@ def k_center_learn(args,config,train_datas,test_datas,model,optimizer_,writer,de
         train_subdatas = torch.cat([train_subdatas[0],train_datas[0][query_ids]]), torch.cat([train_subdatas[1],train_datas[1][query_ids]])
         train_subset = Cifar(*train_subdatas)
         label_rate = len(train_subset)/total_data_num
-        label_rates.append(label_rate)
         #finetuning
         if args.init_model:  #completely reinitialize the model
             model = CNN_Cifar()
@@ -185,6 +187,7 @@ def k_center_learn(args,config,train_datas,test_datas,model,optimizer_,writer,de
             testing_mse, testing_acc = test(args,test_dataset,model,device)
             print('labels ratio {} number {}  test acc {}'.format(label_rate,len(train_subset), testing_acc))
             ac_info.append((train_info['train_loss'][-1],train_info['train_acc'][-1],testing_mse,testing_acc))
+            label_rates.append(label_rate)
 
             if args.use_tb:
                 writer.add_scalar('test_acc',testing_acc,label_rate)
@@ -214,13 +217,13 @@ if __name__ == "__main__":
         args.shuffle = True
         args.multi_gpu = False
         args.prop_name = 'homo'
-        args.lr = 1e-3
+        args.lr = 5e-4
 
         args.init_data_num = 5000
-        args.k_center_ft_epochs = 50
+        args.k_center_ft_epochs = 5
         args.batch_data_num = 100
         args.test_freq = 2
-        args.init_model = True
+        args.init_model = False
         args.query_method = 'k_center'
 
 
@@ -228,7 +231,7 @@ if __name__ == "__main__":
     print(args)
     logs_path = config.PATH + '/datasets/logs' + time.strftime('/%m%d_%H_%M')
     result_path_k_center = config.PATH + '/datasets/k_center/' + args.dataset + time.strftime('_%m%d_%H_%M.txt')
-    result_path_random = config.PATH + '/datasets/rd' + args.dataset + time.strftime('_%m%d_%H_%M.txt')
+    result_path_random = config.PATH + '/datasets/rd/' + args.dataset + time.strftime('_%m%d_%H_%M.txt')
     # train_set, test_set = MoleDataset(prop_name=args.prop_name), MoleDataset(prop_name=args.prop_name)
     # train_set.load_mol(config.train_pkl[args.dataset]), test_set.load_mol(config.test_pkl[args.dataset])
     train_imgs, test_imgs = pickle.load(open(config.train_pkl['cifar10'],'rb')), pickle.load(open(config.test_pkl['cifar10'],'rb'))
@@ -240,19 +243,21 @@ if __name__ == "__main__":
     else:
         writer = None
     # model = SchEmbedding(dim=32, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
-    model = CNN_Cifar()
+    model = ResNet(10)
     print(model)
     # optimizer = optimizer_(model.parameters(),lr=args.lr)
 
     # label_rates = np.arange(75, 105, 5) / 100  # the first will not be trained
-    print('start k center active learning')
-    results_k_center = k_center_learn(args, config, train_imgs, test_imgs, model, optimizer_, writer, device)   #notice the optimizer_
+    # print('start k center active learning')
+    # results_k_center = k_center_learn(args, config, train_imgs, test_imgs, model, optimizer_, writer, device)   #notice the optimizer_
     print('start')
+    args.query_method = 'random'
+    model = ResNet(10)
     results_random = k_center_learn(args, config, train_imgs, test_imgs, model, optimizer_, writer, device)
 
-    with open(result_path_k_center, 'w') as fp:
-        for key in results_k_center.keys():
-            fp.write(str(key) + '\t' + ''.join([str(i) + '\t' for i in results_k_center[key]]) + '\n')
+    # with open(result_path_k_center, 'w') as fp:
+    #     for key in results_k_center.keys():
+    #         fp.write(str(key) + '\t' + ''.join([str(i) + '\t' for i in results_k_center[key]]) + '\n')
     with open(result_path_random,'w') as fp:
         for key in results_random.keys():
             fp.write(str(key) + '\t' + ''.join([str(i) + '\t' for i in results_random[key]]) + '\n')

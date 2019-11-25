@@ -180,14 +180,14 @@ if __name__ == "__main__":
         writer = None
 
 
-
-    if al_method is  'random':
+    print(al_method)
+    if al_method ==  'random':
         model = SchNetModel(dim=96, n_conv=4, cutoff=30.0, width=0.1, norm=True, output_dim=1)
-    elif al_method is 'k_center':
+    elif al_method == 'k_center':
         model = SchEmbedding(dim=96, n_conv=4, cutoff=30.0, width=0.1, norm=True, output_dim=1)
-    elif al_method is 'bayes':
+    elif al_method == 'bayes':
         model = MC_SchNetModel(dim=96, n_conv=4, cutoff=30.0, width=0.1, norm=True, output_dim=1)
-    elif al_method is 'msg_mask':
+    elif al_method == 'msg_mask':
         model = MM_SchNetModel(dim=96, n_conv=4, cutoff=30.0, width=0.1, norm=True, output_dim=1)
     else:
         raise ValueError
