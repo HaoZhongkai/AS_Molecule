@@ -34,9 +34,9 @@ def make_args():
                         help='batch size')
     parser.add_argument("--epochs", type=int, default=10,
                         help="number of epochs")
-    parser.add_argument('--use_tb', type=bool, default=True,
+    parser.add_argument('--use_tb', type=bool, default=False,
                         help='whether use tensorboard for logs')
-    parser.add_argument('--device', type=int, default=0,
+    parser.add_argument('--device', type=int, default=1,
                         help='which gpu to use if any (default: 0)')
     parser.add_argument('--dataset', type=str, default='qm9',
                         help='which dataset to use')
@@ -50,7 +50,7 @@ def make_args():
                         help='use multi gpu for training')
     parser.add_argument('--use_default',default=False,
                         help='whether use augments in args')
-    parser.add_argument('--lr',default=4e-4,
+    parser.add_argument('--lr',default=1e-4,
                         help='learning rate')
 
 
@@ -91,19 +91,23 @@ def make_args():
                         help='AL method in run_al.py, must be in random, bayes, k_center, msg_mask, dropout')
     parser.add_argument('--ft_method',type=str,default='fixed_epochs',
                         help='finetuning method in run_al.py, must be in fixed_epochs, varying_epochs, by_valid')
-    parser.add_argument('--ft_epochs',type=int,default=20,
+    parser.add_argument('--ft_epochs',type=int,default=100,
                         help='the max epochs number for fixed epochs finetuning')
     parser.add_argument('--re_init',type=bool,default=False,
                         help='whether to re-initialize the model after each iteration, advised to use by_valid ft_method if set True')
-    parser.add_argument('--data_mix',type=bool,default=True,
+    parser.add_argument('--data_mix',type=bool,default=False,
                         help='whether finetuning only use part of original data')
-    parser.add_argument('--data_mixing_rate',type=float,default=0.5,
+    parser.add_argument('--data_mixing_rate',type=float,default=1,
                         help='how much data to use in the original dataset')
 
 
     parser.add_argument('--test_checkpoint',type=str,default=True,
                         help='whether re-train a big model to test the mae at the checkpoint dataset like [10000,20000,30000,40000]')
 
+
+
+    parser.add_argument('--mask_n_ratio',type=float,default=0.15,
+                        help='the ratio of the nodes to be masked')
 
     args = parser.parse_args()
 

@@ -145,7 +145,7 @@ if __name__ == "__main__":
     ft_method = args.ft_method
     ft_epochs = args.ft_epochs
 
-    checkpoint_data_num = [10000,20000,30000,40000]
+    checkpoint_data_num = [10000,20000,30000,40000,60000]
 
     cpt_settings = {
         'dim':96,
@@ -157,9 +157,10 @@ if __name__ == "__main__":
         'atom_ref':None,
         'pre_train':None,
 
-        'lr':3e-4,
+        'lr':1e-4,
         'epochs':150,
         'batch_size':64,
+        'n_patience':30
 
     }
 

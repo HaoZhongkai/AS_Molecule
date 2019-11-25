@@ -192,6 +192,40 @@ class MoleDataset(Dataset):
             pickle.dump(self.mols,open(paths,'wb'))
         return
 
+
+
+class SelfMolDataSet(Dataset):
+    def __init__(self,mols=None, level='n'):
+        super(Dataset,self).__init__()
+        self.level = level
+        self.mols = mols
+        self.data_num = len(mols)
+
+        if level is 'n':    # node level self training
+            self.n_ids = [mol.ful_g.ndata['nodes'] for mol in self.mols]
+        elif level is 'g': # graph level jointly with node level
+            self.n_ids = [mol.ful_g.ndata['nodes'] for mol in self.mols]
+        else:
+            raise ValueError
+
+
+
+    def __len__(self):
+        return self.data_num
+
+
+    def __getitem__(self,item):
+        if self.level is 'n':
+            return self.mols[item], self.n_ids[item]
+        elif self.level is 'g':
+            return self.mols[item], self.n_ids[item], item
+
+        else:
+            raise ValueError
+
+
+
+
 # deal with large molecules, load mols from seperate .pkl
 class FMolDataSet(Dataset):
     def __init__(self,dir,prop_name='homo',data_ids=None):
@@ -217,6 +251,8 @@ class FMolDataSet(Dataset):
         self.prop = torch.Tensor([prop[self.prop_name] for prop in props])
         self.mean = torch.mean(self.prop)
         self.std = torch.std(self.prop)
+
+
 
 
 
@@ -254,6 +290,16 @@ def batcher(input):
     mols, props = zip(*input)
     props = torch.stack(props,dim=0)
     return mols, props
+
+def batcher_n(input):
+    mols, nodes = zip(*input)
+    nodes = torch.cat(nodes,dim=0)
+    return mols, nodes
+
+def batcher_g(input):
+    mols, nodes, ids = zip(*input)
+    nodes = torch.cat(nodes,dim=0)
+    return mols, nodes, ids
 
 # dataparallel support set_mean and std for model
 class RefDataParallel(DataParallel):
@@ -310,16 +356,56 @@ def k_center(embeddings, cluster_num):
     center_ids = []
     center_ids.append(random.choice(range(embeddings.shape[0])))
     cluster_center = embeddings[center_ids[-1]].unsqueeze(0)
-    distances = 1e9 * torch.ones([embeddings.shape[0], cluster_num - 1])
+    # distances = 1e9 * torch.ones(embeddings.shape[0])
     min_dist = 1e9*torch.ones(embeddings.shape[0])
     for k in range(cluster_num-1):
         # anchor_ids = random.sample(range(embeddings.shape[0]),embeddings.shape[0]//10)
-        distances[:,k] = torch.sum((embeddings-cluster_center)**2,dim=1)
-        min_dist = torch.min(torch.stack([min_dist,distances[:,k]],dim=0),dim=0)[0]
+        distances = torch.sum((embeddings-cluster_center)**2,dim=1)
+        min_dist = torch.min(torch.stack([min_dist,distances],dim=0),dim=0)[0]
         center_ids.append(int(torch.argmax(min_dist)))
         cluster_center = embeddings[center_ids[-1]]
 
     return center_ids
+
+
+
+# return the id of each data
+def k_means(embeddings, cluster_num, iters, init_method='random', show_stats=True):
+    if init_method is 'random':
+        center_ids = random.sample(range(embeddings.shape[0]),cluster_num)
+    else:
+        center_ids = k_center(embeddings, cluster_num)
+    # center_ids = random.sample(range(embeddings.shape[0]), cluster_num)
+    cluster_centers = embeddings[center_ids]
+    data_tags = 0
+    for iteration in range(iters):
+
+        distances = pairwise_L2(embeddings, cluster_centers)
+        data_tags = torch.argmin(distances,dim=1)
+        n_count = torch.ones_like(embeddings).float()
+        # see: https://stackoverflow.com/questions/58007127/pytorch-differentiable-conditional-index-based-sum
+        n_centers = torch.zeros([data_tags.max()+1,embeddings.shape[1]])
+        avg_centers = torch.zeros([data_tags.max()+1, embeddings.shape[1]])
+        n_centers.index_add_(0,data_tags,n_count)
+        avg_centers.index_add_(0,data_tags, embeddings)
+        avg_centers = avg_centers / n_centers
+        cls_ids = [[] for _ in range(cluster_num)]  # record the data ids of each cluster
+
+        [cls_ids[int(data_tags[i])].append(i) for i in range(embeddings.shape[0])]
+        # for i in range(cluster_num):
+        #     if len(cls_ids[i]):
+        #         center_ids[i] = cls_ids[i][int(torch.argmin(torch.sum((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1)))]
+        # update cluster centers
+        # cluster_centers = embeddings[center_ids]
+        cluster_centers = avg_centers
+        if show_stats:
+            E = 0
+            for i in range(cluster_num):
+                E += torch.sum(torch.mean((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1))
+            E  = E / cluster_num
+            print('Iteration {} Mean MSE {}'.format(iteration+1,E))
+    return data_tags
+
 
 
 
