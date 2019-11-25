@@ -60,7 +60,7 @@ def make_args():
 
 
     # universal active learning settings
-    parser.add_argument('--batch_data_num', default=5000)
+    parser.add_argument('--batch_data_num',type=int, default=5000)
     parser.add_argument('--test_freq',default=1)
 
 
