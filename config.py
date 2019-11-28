@@ -60,7 +60,7 @@ def make_args():
 
 
     # universal active learning settings
-    parser.add_argument('--batch_data_num',type=int, default=5000)
+    parser.add_argument('--batch_data_num',type=int, default=10000)
     parser.add_argument('--test_freq',default=1)
 
 
@@ -72,7 +72,7 @@ def make_args():
 
 
     # k-center settings
-    parser.add_argument('--init_data_num',default=5000,
+    parser.add_argument('--init_data_num',default=10000,
                         help='initial data size')
     parser.add_argument('--k_center_ft_epochs',default=10,
                                help='finetuning epochs for k center method')
@@ -91,7 +91,7 @@ def make_args():
                         help='AL method in run_al.py, must be in random, bayes, k_center, msg_mask, dropout')
     parser.add_argument('--ft_method',type=str,default='fixed_epochs',
                         help='finetuning method in run_al.py, must be in fixed_epochs, varying_epochs, by_valid')
-    parser.add_argument('--ft_epochs',type=int,default=100,
+    parser.add_argument('--ft_epochs',type=int,default=40,
                         help='the max epochs number for fixed epochs finetuning')
     parser.add_argument('--re_init',type=bool,default=False,
                         help='whether to re-initialize the model after each iteration, advised to use by_valid ft_method if set True')

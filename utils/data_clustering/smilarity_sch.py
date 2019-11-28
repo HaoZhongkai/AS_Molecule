@@ -54,29 +54,23 @@ def get_preds(args,model,dataset,device):
 
 
 qm9_data_path = config.train_pkl['qm9']
-qm9_data_path_te = config.test_pkl['qm9']
-
 mols = pickle.load(open(qm9_data_path,'rb'))
-mols_te = pickle.load(open(qm9_data_path_te,'rb'))
 # smis = [mol.smi for mol in mols]
 
 model = SchEmbedding(dim=48, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
+# model = WSchnet_N(dim=96, n_conv=4, cutoff=30.0, width=0.1, norm=True, output_dim=1)
+
 dataset = MoleDataset(mols=mols,prop_name='homo')
-dataset_te = MoleDataset(mols=mols_te,prop_name='homo')
 
 embeddings = get_preds(args,model,dataset,torch.device(args.device))
 
-embeddings_te = get_preds(args,model,dataset_te,torch.device(args.device))
+embeddings = embeddings.cpu()
 
-
-# embeddings = embeddings.cpu()
-# embeddings_te = embeddings_te.cpu()
-center_ids = k_medoids_pp(embeddings,5000,10,show_stats=True)
+center_ids = k_medoids_pp(embeddings,5000,15,show_stats=True)
 # center_ids = random.sample(range(embeddings.shape[0]),5000)
 
 
 embeddings = embeddings.numpy()
-embeddings_te = embeddings_te.numpy()
 # fingerprints = [smi2vec(smi) for smi in smis]
 
 
@@ -90,14 +84,12 @@ pca.fit(embeddings)
 
 qm9_pca = pca.transform(embeddings)
 
-qm9_pca_te =  pca.transform(embeddings_te)
+
 
 
 print('time {}'.format(time.time()-time0))
-plt.scatter(qm9_pca[:,0],qm9_pca[:,1],marker='.',color='b',label='training data')
-plt.scatter(qm9_pca[center_ids,0],qm9_pca[center_ids,1],marker='.',color='r',label='cluster_centers')
-# plt.scatter(qm9_pca_te[:,0],qm9_pca_te[:,1],marker='.',color='g',label='test data')
-plt.legend()
+plt.scatter(qm9_pca[:,0],qm9_pca[:,1],marker='.',color='b')
+plt.scatter(qm9_pca[center_ids,0],qm9_pca[center_ids,1],marker='.',color='g')
 plt.savefig('qm9_pca_sch.png')
 
 # qm9_pca_t = torch.Tensor(qm9_pca)

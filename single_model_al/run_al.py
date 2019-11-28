@@ -118,7 +118,7 @@ def active_learning(input):
         if args.test_checkpoint and (expect_data_num in cpt_data_nums):
             labeled_ids = al_sampler.get_label_ids()
             train_ckpset = MoleDataset(mols=[train_dataset.mols[i] for i in labeled_ids])
-            cpk_mae_train, cpk_mae_test = check_point_test(cpt_settings, train_ckpset, test_dataset, device)
+            _ ,cpk_mae_train, cpk_mae_test = check_point_test(cpt_settings, train_ckpset, test_dataset, device)
             cpk_train_mae.append(cpk_mae_train)
             cpk_test_mae.append(cpk_mae_test)
             save_cpt_xlsx(cpt_path, cpt_data_nums, cpk_train_mae, cpk_test_mae)

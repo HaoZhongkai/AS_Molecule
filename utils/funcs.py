@@ -172,6 +172,9 @@ class MoleDataset(Dataset):
         return
 
 
+    def get_props(self):
+        return self.prop
+
     def load_mol(self,paths):
         self.mols = []
         if type(paths) is list:
@@ -195,19 +198,21 @@ class MoleDataset(Dataset):
 
 
 class SelfMolDataSet(Dataset):
-    def __init__(self,mols=None, level='n'):
+    def __init__(self,mols=None, level='n',prop_name='homo'):
         super(Dataset,self).__init__()
         self.level = level
         self.mols = mols
         self.data_num = len(mols)
+        self.n_ids = [mol.ful_g.ndata['nodes'] for mol in self.mols]
+        self.prop = torch.Tensor([mol.props[prop_name] for mol in self.mols])
+        self.mean = torch.mean(self.prop)
+        self.std = torch.std(self.prop)
 
-        if level is 'n':    # node level self training
-            self.n_ids = [mol.ful_g.ndata['nodes'] for mol in self.mols]
-        elif level is 'g': # graph level jointly with node level
-            self.n_ids = [mol.ful_g.ndata['nodes'] for mol in self.mols]
-        else:
+        if level not in ['n','g','w']:
             raise ValueError
 
+    def get_level(self):
+        return self.level
 
 
     def __len__(self):
@@ -215,13 +220,14 @@ class SelfMolDataSet(Dataset):
 
 
     def __getitem__(self,item):
-        if self.level is 'n':
+        if (self.level == 'n'):
             return self.mols[item], self.n_ids[item]
-        elif self.level is 'g':
+        elif (self.level == 'g') or (self.level == 'w'):
             return self.mols[item], self.n_ids[item], item
 
         else:
             raise ValueError
+
 
 
 
@@ -353,6 +359,7 @@ def k_medoid(embeddings, cluster_num, iters, center_ids=None, show_stats=False):
 
 
 def k_center(embeddings, cluster_num):
+    time0 = time.time()
     center_ids = []
     center_ids.append(random.choice(range(embeddings.shape[0])))
     cluster_center = embeddings[center_ids[-1]].unsqueeze(0)
@@ -364,46 +371,74 @@ def k_center(embeddings, cluster_num):
         min_dist = torch.min(torch.stack([min_dist,distances],dim=0),dim=0)[0]
         center_ids.append(int(torch.argmax(min_dist)))
         cluster_center = embeddings[center_ids[-1]]
-
+    print('k_center finished {}'.format(time.time()-time0))
     return center_ids
 
 
 
+# see: https://stackoverflow.com/questions/58007127/pytorch-differentiable-conditional-index-based-sum
+#clear up clusters
+def get_centers(embeddings,data_tags,cluster_num):
+    val_cls_num = data_tags.max() + 1
+    cluster_centers = torch.zeros([cluster_num,embeddings.shape[1]])
+    n_count = torch.ones_like(embeddings).float()
+    n_centers = torch.zeros([data_tags.max() + 1, embeddings.shape[1]]).to(embeddings.device)
+    avg_centers = torch.zeros([data_tags.max() + 1, embeddings.shape[1]]).to(embeddings.device)
+    n_centers.index_add_(0, data_tags, n_count)
+    avg_centers.index_add_(0, data_tags, embeddings)
+    avg_centers = avg_centers / n_centers
+    cluster_centers[:val_cls_num] = avg_centers
+    cls_ids = [[] for _ in range(cluster_num)]  # record the data ids of each cluster
+    [cls_ids[int(data_tags[i])].append(i) for i in range(data_tags.shape[0])]
+
+    # reassign empty clusters
+    ept_cls_num = 0
+    for i in range(cluster_num):
+        if len(cls_ids[i]) == 0:
+            cls_ids[i] = random.choice(range(embeddings.shape[0]))
+            cluster_centers[i] = embeddings[cls_ids[i]]
+            ept_cls_num += 1
+
+    if ept_cls_num > 0:
+        print('{} empty cluster detected'.format(ept_cls_num))
+    return cluster_centers, cls_ids
+
+
 # return the id of each data
-def k_means(embeddings, cluster_num, iters, init_method='random', show_stats=True):
-    if init_method is 'random':
+def k_means(embeddings, cluster_num, iters, inits='random', show_stats=True):
+    if inits is 'random':
         center_ids = random.sample(range(embeddings.shape[0]),cluster_num)
-    else:
+        cluster_centers = embeddings[center_ids]
+        data_tags = 0
+
+    elif inits is 'k_center':
         center_ids = k_center(embeddings, cluster_num)
-    # center_ids = random.sample(range(embeddings.shape[0]), cluster_num)
-    cluster_centers = embeddings[center_ids]
-    data_tags = 0
+        cluster_centers = embeddings[center_ids]
+        data_tags = 0
+        print('seed initialization finished')
+
+    else:
+        data_tags = inits
+        cluster_centers, cls_ids = get_centers(embeddings,data_tags,cluster_num)
+
     for iteration in range(iters):
 
         distances = pairwise_L2(embeddings, cluster_centers)
         data_tags = torch.argmin(distances,dim=1)
-        n_count = torch.ones_like(embeddings).float()
-        # see: https://stackoverflow.com/questions/58007127/pytorch-differentiable-conditional-index-based-sum
-        n_centers = torch.zeros([data_tags.max()+1,embeddings.shape[1]])
-        avg_centers = torch.zeros([data_tags.max()+1, embeddings.shape[1]])
-        n_centers.index_add_(0,data_tags,n_count)
-        avg_centers.index_add_(0,data_tags, embeddings)
-        avg_centers = avg_centers / n_centers
-        cls_ids = [[] for _ in range(cluster_num)]  # record the data ids of each cluster
+        cluster_centers, cls_ids = get_centers(embeddings,data_tags,cluster_num)
 
-        [cls_ids[int(data_tags[i])].append(i) for i in range(embeddings.shape[0])]
-        # for i in range(cluster_num):
-        #     if len(cls_ids[i]):
-        #         center_ids[i] = cls_ids[i][int(torch.argmin(torch.sum((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1)))]
-        # update cluster centers
-        # cluster_centers = embeddings[center_ids]
-        cluster_centers = avg_centers
         if show_stats:
             E = 0
             for i in range(cluster_num):
-                E += torch.sum(torch.mean((embeddings[cls_ids[i]]-avg_centers[i])**2,dim=1))
+                try:
+                    E += torch.sum(torch.mean((embeddings[cls_ids[i]].view(-1,embeddings.size(1))-cluster_centers[i])**2,dim=1))
+                except Exception:
+                    pass
             E  = E / cluster_num
             print('Iteration {} Mean MSE {}'.format(iteration+1,E))
+
+
+
     return data_tags
 
 
@@ -513,6 +548,47 @@ def nx2mol(G):
 
 
 
+class AccMeter():
+    def __init__(self,n_classes):
+        self.n_classes = n_classes
+        self.correct_num = 0.0
+        self.total_num = 0
+        self.iters = 0
+
+    def add(self,preds, targets):
+        self.correct_num += torch.sum(preds.eq(targets))
+        self.total_num += preds.shape[0]
+        self.iters += 1
+
+    def reset(self):
+        self.correct_num = 0.0
+        self.total_num = 0.0
+        self.iters = 0
+
+
+    def value(self):
+        return float(self.correct_num)/ (self.total_num+1e-10)
+
+
+ # avg_centers = get_avg_centers(data_tags, embeddings)
+        # val_cls_num = data_tags.max() + 1
+        # cls_ids = [[] for _ in range(cluster_num)]  # record the data ids of each cluster
+        # [cls_ids[int(data_tags[i])].append(i) for i in range(embeddings.shape[0])]
+        # cluster_centers = avg_centers
+        #
+        # # avoid empty clusters
+        # ept_cls_num = 0
+        # for i in range(cluster_num):
+        #     if len(cls_ids[i]) == 0:
+        #         cls_ids[i] = random.choice(range(embeddings.shape[0]))
+        #         try:
+        #             cluster_centers[i] = embeddings[cls_ids[i]]
+        #         except Exception:
+        #             print("errrrrrrrrror")
+        #         ept_cls_num += 1
+        #
+        # if ept_cls_num > 0:
+        #     print('{} empty cluster detected'.format(ept_cls_num))
 
 
 
