@@ -189,18 +189,135 @@ class Interaction(nn.Module):
         self.cfconv = CFConv(rbf_dim, dim, act=self.activation)
         self.node_layer2 = nn.Linear(dim, dim)
         self.node_layer3 = nn.Linear(dim, dim)
+        self.bn1 = nn.BatchNorm1d(dim)
+        self.bn2 = nn.BatchNorm1d(dim)
+        self.bn3 = nn.BatchNorm1d(dim)
+
 
     def forward(self, g):
 
-        g.ndata["new_node"] = self.node_layer1(g.ndata["node"])
+        g.ndata["new_node"] = self.bn1(self.node_layer1(g.ndata["node"]))
         cf_node = self.cfconv(g)
-        cf_node_1 = self.node_layer2(cf_node)
+        cf_node_1 = self.bn2(self.node_layer2(cf_node))
         cf_node_1a = self.activation(cf_node_1)
-        new_node = self.node_layer3(cf_node_1a)
+        new_node = self.bn3(self.node_layer3(cf_node_1a))
         g.ndata["node"] = g.ndata["node"] + new_node
         return g.ndata["node"]
 
 
+'''Original Schnet'''
+class SchInteraction(nn.Module):
+    """
+    The interaction layer in the SchNet model.
+    """
+
+    def __init__(self, rbf_dim, dim):
+        super(SchInteraction,self).__init__()
+        self._node_dim = dim
+        self.activation = nn.Softplus(beta=0.5, threshold=14)
+        self.node_layer1 = nn.Linear(dim, dim, bias=False)
+        self.cfconv = CFConv(rbf_dim, dim, act=self.activation)
+        self.node_layer2 = nn.Linear(dim, dim)
+        self.node_layer3 = nn.Linear(dim, dim)
+        self.bn1 = nn.BatchNorm1d(dim)
+        self.bn2 = nn.BatchNorm1d(dim)
+        self.bn3 = nn.BatchNorm1d(dim)
+
+
+    def forward(self, g):
+
+        g.ndata["new_node"] = self.bn1(self.node_layer1(g.ndata["node"]))
+        cf_node = self.cfconv(g)
+        cf_node_1 = self.bn2(self.node_layer2(cf_node))
+        cf_node_1a = self.activation(cf_node_1)
+        new_node = self.bn3(self.node_layer3(cf_node_1a))
+        g.ndata["node"] = g.ndata["node"] + new_node
+        return g.ndata["node"]
+
+
+class SchNet(nn.Module):
+    """
+    SchNet Model from:
+        Schütt, Kristof, et al.
+        SchNet: A continuous-filter convolutional neural network
+        for modeling quantum interactions. (NIPS'2017)
+    """
+
+    def __init__(self,
+                 dim=64,
+                 cutoff=5.0,
+                 output_dim=1,
+                 width=1,
+                 n_conv=3,
+                 norm=False,
+                 atom_ref=None,
+                 pre_train=None,
+                 ):
+        """
+        Args:
+            dim: dimension of features
+            output_dim: dimension of prediction
+            cutoff: radius cutoff
+            width: width in the RBF function
+            n_conv: number of interaction layers
+            atom_ref: used as the initial value of atom embeddings,
+                      or set to None with random initialization
+            norm: normalization
+        """
+        super(SchNet,self).__init__()
+        self.name = "SchNet"
+        self._dim = dim
+        self.cutoff = cutoff
+        self.width = width
+        self.n_conv = n_conv
+        self.atom_ref = atom_ref
+        self.norm = norm
+        self.activation = ShiftSoftplus()
+
+        if atom_ref is not None:
+            self.e0 = AtomEmbedding(1, pre_train=atom_ref)
+        if pre_train is None:
+            self.embedding_layer = AtomEmbedding(dim)
+        else:
+            self.embedding_layer = AtomEmbedding(pre_train=pre_train)
+        self.rbf_layer = RBFLayer(0, cutoff, width)
+        self.conv_layers = nn.ModuleList(
+            [SchInteraction(self.rbf_layer._fan_out, dim) for i in range(n_conv)])
+
+        self.atom_dense_layer1 = nn.Linear(dim, 64)
+        self.atom_dense_layer2 = nn.Linear(64, 1)
+
+    def set_mean_std(self, mean, std):
+        self.mean_per_atom = mean.clone().detach()
+        self.std_per_atom = std.clone().detach()
+
+
+    def forward(self, g):
+        # g_list list of molecules
+
+        g.edata['distance'] = g.edata['distance'].reshape(-1,1)
+
+        self.embedding_layer(g)
+        if self.atom_ref is not None:
+            self.e0(g, "e0")
+        self.rbf_layer(g)
+        for idx in range(self.n_conv):
+            self.conv_layers[idx](g)
+
+        atom = self.atom_dense_layer1(g.ndata["node"])
+        atom = self.activation(atom)
+        res = self.atom_dense_layer2(atom)
+
+        g.ndata["res"] = res
+
+        if self.atom_ref is not None:
+            g.ndata["res"] = g.ndata["res"] + g.ndata["e0"]
+
+        if self.norm:
+            g.ndata["res"] = g.ndata[
+                "res"] * self.std_per_atom + self.mean_per_atom
+        res = dgl.mean_nodes(g, "res")
+        return res
 
 
 class SchNetModel(nn.Module):
@@ -253,7 +370,8 @@ class SchNetModel(nn.Module):
             [Interaction(self.rbf_layer._fan_out, dim) for i in range(n_conv)])
 
         self.atom_dense_layer1 = nn.Linear(dim, 64)
-        self.atom_dense_layer2 = nn.Linear(64, output_dim)
+        self.atom_dense_layer2 = nn.Linear(64, 64)
+        self.regressor = nn.Linear(64,1)
 
     def set_mean_std(self, mean, std):
         self.mean_per_atom = mean.clone().detach()
@@ -274,7 +392,9 @@ class SchNetModel(nn.Module):
 
         atom = self.atom_dense_layer1(g.ndata["node"])
         atom = self.activation(atom)
-        res = self.atom_dense_layer2(atom)
+        atom = self.activation(self.atom_dense_layer2(atom))
+        res = self.regressor(atom)
+
         g.ndata["res"] = res
 
         if self.atom_ref is not None:

@@ -10,9 +10,13 @@ from torchnet import meter
 from torch.optim import Adam
 import pandas as pd
 import sys
+import ot
+import torch.nn.functional as F
+import copy
 
 sys.path.append('..')
 from base_model.schmodel import SchNetModel
+
 from utils.funcs import *
 
 
@@ -34,7 +38,7 @@ class AL_sampler(object):
         self.batch_data_num = batch_data_num
         self.data_mix = args.data_mix
         self.data_mixing_rate = args.data_mixing_rate
-        self.label_ids = init_ids if init_ids != None else []
+        self.label_ids = init_ids if init_ids != None else []   # labelled ids
         self.data_ids = np.delete(np.arange(self.total_data_num,dtype=int),init_ids)  #data unselected
         self.al_method = method
 
@@ -63,7 +67,12 @@ class AL_sampler(object):
             new_batch_ids = self._bayes_query(inputs)
 
         elif self.al_method == 'msg_mask':
+
             new_batch_ids = self._msg_mask_query(inputs)
+
+        elif self.al_method == 'k_medroids':
+
+            new_batch_ids = self._k_medroids_query(inputs)
 
         else:
             raise ValueError
@@ -74,14 +83,14 @@ class AL_sampler(object):
         return new_batch_ids
 
 
-    def generate_subset(self,new_batch_ids):
-        if self.data_mix:
-            subset_ids = deepcopy(random.sample(self.label_ids,int(self.data_mixing_rate*len(self.label_ids))))
-            subset_ids.extend(list(new_batch_ids))
-        else:
-            subset_ids = deepcopy(self.label_ids)
-            subset_ids.extend(list(new_batch_ids))
-        return subset_ids
+    # def generate_subset(self,new_batch_ids):
+    #     if self.data_mix:
+    #         subset_ids = deepcopy(random.sample(self.label_ids,int(self.data_mixing_rate*len(self.label_ids))))
+    #         subset_ids.extend(list(new_batch_ids))
+    #     else:
+    #         subset_ids = deepcopy(self.label_ids)
+    #         subset_ids.extend(list(new_batch_ids))
+    #     return subset_ids
 
 
     def _random_query(self):
@@ -124,6 +133,20 @@ class AL_sampler(object):
         return new_batch_ids
 
 
+    def _k_medroids_query(self, inputs):
+        time0 = time.time()
+        un_embeddings = inputs[self.data_ids]
+
+        new_batch_ids_ = k_medoids_pp(un_embeddings, self.batch_data_num, 10, show_stats=True)
+        new_batch_ids = self.data_ids[new_batch_ids_]
+
+        self.data_ids = np.delete(self.data_ids,new_batch_ids_)
+        print('query new data {}'.format(time.time()-time0))
+
+        return new_batch_ids
+
+
+
 
     def _variance_query(self,preds):
         time0 = time.time()
@@ -137,6 +160,8 @@ class AL_sampler(object):
         self.data_ids = np.delete(self.data_ids, query_ids)  # del from unlabeled
         print('query new data  {}'.format(time.time() - time0))
         return new_batch_ids
+
+
 
 
     def _bayes_query(self, inputs):
@@ -465,9 +490,19 @@ class Weakly_Supervised_Trainer(object):
         self.wal_settings = wal_settings
         self.cls_tags = 0
         self.iters = 0
+        self.method = wal_settings['cls_method']
 
 
     def run(self,model,dataset,optimizer,device,writer=None,p_labels=None,level='g'):
+        if self.method == 'k_means':
+            self._run_kmeans(model,dataset,optimizer,device,writer,p_labels,level)
+        elif self.method == 'ot':
+            self._run_ot(model,dataset,optimizer,device,writer,p_labels,level)
+        else:
+            raise ValueError
+
+
+    def _run_kmeans(self,model,dataset,optimizer,device,writer=None,p_labels=None,level='g'):
         settings = self.wal_settings
         train_loader = DataLoader(dataset=dataset, batch_size=self.args.batchsize, collate_fn=batcher_g,shuffle=self.args.shuffle, num_workers=self.args.workers)
         model.to(device)
@@ -508,6 +543,7 @@ class Weakly_Supervised_Trainer(object):
 
                 else:
                     cls_tags = k_means(feats_all.cpu(),settings['cls_num'],settings['iters'],inits='random',show_stats=True)   #******
+
                     self.cls_tags = cls_tags
                 model.re_init_head()
             for idx, (mols, n_label, ids) in enumerate(train_loader):
@@ -562,7 +598,7 @@ class Weakly_Supervised_Trainer(object):
             p_acc = 100*sum(p_acc_meter.value()[i, i] for i in range(settings['prop_bins'])) / p_acc_meter.value().sum()
             print("Epoch {:2d}, training: loss: {:.7f}, acc: {:.7f}  self-clustering: loss: {:.7f} acc: {:.7f}  props: loss {} acc {} level {}".format(epoch, n_loss_meter.value()[0], n_acc, c_loss_meter.value()[0], 100 * c_acc_meter.value(), p_loss_meter.value()[0], p_acc,level))
             if (epoch + 1) % 100 == 0:
-                init_lr = init_lr / 1
+                init_lr = init_lr *0.75
                 for param_group in optimizer.param_groups:
                     param_group['lr'] = init_lr
                 print('current learning rate: {}'.format(init_lr))
@@ -577,11 +613,146 @@ class Weakly_Supervised_Trainer(object):
         return info
 
 
+    def _run_ot(self,model,dataset,optimizer,device,writer=None,p_labels=None,level='g'):
+        settings = self.wal_settings
+        train_loader = DataLoader(dataset=dataset, batch_size=self.args.batchsize, collate_fn=batcher_g,
+                                  shuffle=self.args.shuffle, num_workers=self.args.workers)
+        model.to(device)
+        if p_labels is not None:
+            p_labels = p_labels.to(device)
+        loss_fn = nn.CrossEntropyLoss()
+        MSE_fn = nn.MSELoss()
+        MAE_fn = nn.L1Loss()
+        loss_meter = meter.AverageValueMeter()
+        n_loss_meter = meter.AverageValueMeter()
+        e_loss_meter = meter.AverageValueMeter()
+        c_loss_meter = meter.AverageValueMeter()
+        p_loss_meter = meter.AverageValueMeter()
+        n_acc_meter = meter.ConfusionMeter(100)  # clustering num might be too big, do not use confusion matrix
+        e_acc_meter = meter.ConfusionMeter(150)
+        p_mae_meter = meter.AverageValueMeter()
+        c_acc_meter = AccMeter(settings['cls_num'])
+        init_lr = self.args.lr
+        info = {'n_loss': [],
+                'n_acc': [],
+                'c_loss': [],
+                'c_acc': [],
+                'p_loss': [],
+                'p_mae': []
+                }
+        cls_tags = 0
+        edge_bins = torch.linspace(0, 30, 150).to(device)  # 0.2 per bin
+        K = settings['cls_num']
+        N = len(dataset)
+
+        # q = np.ones(K)/K     # cls distribution
+        # p = np.ones(N)/N     # instance distribution
+
+        # C = np.ones([N, K]) * np.log(K) / N  # prob_tensor  (cost function)
+        # Q = np.ones([N, K]) / (K * N)  # the tag is a prob distribution
+
+        # # Now I replace it by a normal distribution 4 is decided by 100000*Gauss(4)~10
+        q = np.exp(-(np.linspace(-4,4,K)**2)/2)/(np.sqrt(2*np.pi))
+        q = q / q.sum()
+        p = torch.ones(N) / N
+        #
+        C = np.ones([N, K])* np.log(K) / N   # cost matrix
+        Q = np.copy(np.tile(q,(N, 1))) / N   # joint distribution
+
+        model.set_mean_std(torch.zeros([1]), torch.ones([1]))
+        for epoch in range(self.args.ft_epochs):
+            loss_meter.reset()
+            n_loss_meter.reset()
+            e_loss_meter.reset()
+            c_loss_meter.reset()
+            p_loss_meter.reset()
+            n_acc_meter.reset()
+            e_acc_meter.reset()
+            c_acc_meter.reset()
+            p_mae_meter.reset()
+            model.train()
+
+            # prepare pesudo labels via optimal transport
+            if epoch % settings['cls_epochs'] == 1:
+                time0 = time.time()
+                Q = ot.sinkhorn(p, q, C, 0.04)
+                print('optimal transport finished {}'.format(time.time() -time0))
+            for idx, (mols, n_label, ids) in enumerate(train_loader):
+                g = dgl.batch([mol.ful_g for mol in mols])
+                g.to(device)
+                n_label = n_label.to(device)
+
+                # make pesudo labels vis optimal transport
+                cls_labels = torch.tensor(np.argmax(Q[list(ids)], axis=1), requires_grad=False).to(device).long()
+
+
+                atom, atom_preds, edge_preds, (src, dst, edge_ids), cls_preds, embeddings_g, prop_preds = model(g)
+
+                edge_dist = torch.clone(g.edata['distance'][edge_ids]).requires_grad_(False)
+                edge_labels = torch.argmin(torch.abs(edge_dist - edge_bins), dim=1).long()
+                node_labels = n_label[src]
+
+
+                n_pred_cls = torch.argmax(atom_preds, dim=1)
+                e_pred_cls = torch.argmax(edge_preds, dim=1)
+                c_pred_cls = torch.argmax(cls_preds, dim=1)
+                cls_logits = torch.log(F.softmax(cls_preds, dim=1))
+
+                n_loss = loss_fn(atom_preds, node_labels)
+                e_loss = loss_fn(edge_preds, edge_labels)
+                c_loss = loss_fn(cls_preds, cls_labels)
+
+                p_loss = torch.Tensor([0.]).to(device)
+                if level == 'w':
+                    p_loss = MSE_fn(prop_preds, p_labels[list(ids)])
+                    p_mae = MAE_fn(prop_preds, p_labels[list(ids)])
+
+                # loss = c_loss + n_loss + e_loss + p_loss* 5e4
+                # For AB study
+                loss = c_loss + p_loss* 1e4
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                C[idx * self.args.batchsize:idx * self.args.batchsize + len(mols)] = - cls_logits.detach().cpu().numpy()
+
+                loss_meter.add(loss.detach().item())
+                n_loss_meter.add(n_loss.detach().item())
+                e_loss_meter.add(e_loss.detach().item())
+                c_loss_meter.add(c_loss.detach().item())
+                n_acc_meter.add(n_pred_cls, node_labels)
+                e_acc_meter.add(e_pred_cls,edge_labels)
+                c_acc_meter.add(c_pred_cls, cls_labels)
+                p_loss_meter.add(p_loss.detach().item())
+                p_mae_meter.add(p_mae.detach().item()) if p_labels is not None else p_mae_meter.add(0)
+
+
+            # n_loss_test, n_acc_test= test(args,test_loader,model,device)
+            n_acc = 100 * sum(n_acc_meter.value()[i, i] for i in range(100)) / n_acc_meter.value().sum()
+            e_acc = 100 * sum(e_acc_meter.value()[i, i] for i in range(150)) / e_acc_meter.value().sum()
+            print("Epoch {:2d}, training: loss: {:.7f}, node {:.4f} acc: {:.4f} edge {:.4f} acc {:.4f} clustering: loss: {:.4f} acc {:.4f} props: loss {:.5f}  mae {:.5f} level {}".format(
+                epoch, loss_meter.value()[0], n_loss_meter.value()[0], n_acc, e_loss_meter.value()[0], e_acc, c_loss_meter.value()[0], c_acc_meter.value(), p_loss_meter.value()[0], p_mae_meter.value()[0], level))
+            if (epoch + 1) % 100 == 0:
+                init_lr = init_lr / 1
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = init_lr
+                print('current learning rate: {}'.format(init_lr))
+
+            info['n_loss'].append(n_loss_meter.value()[0])
+            info['n_acc'].append(n_acc)
+            info['c_loss'].append(c_loss_meter.value()[0])
+            info['p_loss'].append(p_loss_meter.value()[0])
+            info['p_mae'].append(p_mae_meter.value()[0])
+            self.iters += 1
+        return info
+
+
 
     # add ground truth label for labeled data, others by the prediction of model_h
-    def generate_p_labels(self,model_h,train_dataset, label_ids,un_labeled_ids,device):
+    def generate_p_labels(self,model_h,train_dataset, label_ids,un_labeled_ids, prop_name,device):
         time0 = time.time()
-        un_dataset = MoleDataset(mols=[train_dataset.mols[i] for i in un_labeled_ids])
+        un_dataset = MoleDataset(mols=[train_dataset.mols[i] for i in un_labeled_ids], prop_name=prop_name)
         dataloader = DataLoader(dataset=un_dataset, batch_size=self.args.batchsize * 5, collate_fn=batcher, shuffle=False,num_workers=self.args.workers)
         model_h.to(device)
         # model.set_mean_std(dataset.mean,dataset.std)
@@ -597,10 +768,10 @@ class Weakly_Supervised_Trainer(object):
         scores = torch.cat(scores, dim=0)
         p_labels[label_ids] = train_dataset.prop[label_ids].to(device)
         p_labels[un_labeled_ids] = scores
-        p_labels = (p_labels.contiguous()-model_h.mean_per_atom) / model_h.std_per_atom
-        p_labels = (1+torch.erf(p_labels/2**0.5))/2   #transform it to (0,1), when bins are big, value might overflow
-        bin_gap = 1/self.wal_settings['prop_bins']
-        p_labels = (p_labels/(bin_gap+1e-7)).long()
+        # p_labels = (p_labels.contiguous()-model_h.mean_per_atom) / model_h.std_per_atom
+        # p_labels = (1+torch.erf(p_labels/2**0.5))/2   #transform it to (0,1), when bins are big, value might overflow
+        # bin_gap = 1/self.wal_settings['prop_bins']
+        # p_labels = (p_labels/(bin_gap+1e-7)).long()
 
         print('pesudo label generation {}'.format(time.time() - time0))
         return p_labels
@@ -634,21 +805,22 @@ def get_preds_w(args,model,dataset,device):
     return embeddings
 
 
-def check_point_test(settings,train_dataset,test_dataset,device):
+def check_point_test(settings,train_dataset,test_dataset, teacher_model,max_epochs,device):
 
     dim, cutoff, output_dim, width, n_conv, norm, atom_ref, pre_train = settings['dim'], settings['cutoff'], settings['output_dim'], settings['width'], settings['n_conv'], settings['norm'], settings['atom_ref'], settings['pre_train']
     lr, epochs, batch_size, n_patience = settings['lr'], settings['epochs'], settings['batch_size'], settings['n_patience']
     model = SchNetModel(dim=dim, cutoff=cutoff, output_dim=output_dim,width= width, n_conv=n_conv, norm=norm, atom_ref=atom_ref, pre_train=pre_train)
+    model.load_state_dict(copy.deepcopy(teacher_model.state_dict()),strict=False)
     optimizer = Adam(model.parameters(),lr=lr)
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, collate_fn=batcher,
                               shuffle=True, num_workers=0)
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, collate_fn=batcher,
                               shuffle=True, num_workers=0)
-    print('Start checkpoint testing ')
+    print('Start checkpoint testing  label num {}'.format(len(train_dataset)))
     print('dataset mean {} std {}'.format(train_dataset.mean.item(), train_dataset.std.item()))
     model.set_mean_std(train_dataset.mean, train_dataset.std)
     model.to(device)
-
+    init_lr = lr
     # optimizer = optimizer_(model.parameters(), lr=args.lr)
     loss_fn = nn.MSELoss()
     MAE_fn = nn.L1Loss()
@@ -660,7 +832,7 @@ def check_point_test(settings,train_dataset,test_dataset,device):
     best_test_mae = 1e8
     patience = 0
     epoch = 0
-    while(patience<=n_patience):
+    for i in range(max_epochs):
         mse_meter.reset()
         mae_meter.reset()
         model.train()
@@ -692,6 +864,11 @@ def check_point_test(settings,train_dataset,test_dataset,device):
                 mae = MAE_fn(res, label)
                 test_mae_meter.add(mae.detach().item())
         test_mae.append(test_mae_meter.value()[0])
+        if (epoch + 1) % 100 == 0:
+            init_lr = init_lr * 0.75
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = init_lr
+            print('current learning rate: {}'.format(init_lr))
         if test_mae[-1]>best_test_mae:
             patience += 1
         else:
@@ -758,3 +935,120 @@ def save_cpt_xlsx(cpk_path,cpk_datas,train_mae, test_mae):
 
 
 
+ # def _run_ot(self,model,dataset,optimizer,device,writer=None,p_labels=None,level='g'):
+ #        settings = self.wal_settings
+ #        train_loader = DataLoader(dataset=dataset, batch_size=self.args.batchsize, collate_fn=batcher_g,
+ #                                  shuffle=self.args.shuffle, num_workers=self.args.workers)
+ #        model.to(device)
+ #        if p_labels is not None:
+ #            p_labels = p_labels.to(device)
+ #        loss_fn = nn.CrossEntropyLoss()
+ #        MSE_fn = nn.MSELoss()
+ #        MAE_fn = nn.L1Loss()
+ #        n_loss_meter = meter.AverageValueMeter()
+ #        c_loss_meter = meter.AverageValueMeter()
+ #        p_loss_meter = meter.AverageValueMeter()
+ #        n_acc_meter = meter.ConfusionMeter(100)  # clustering num might be too big, do not use confusion matrix
+ #        p_mae_meter = meter.AverageValueMeter()
+ #        c_acc_meter = AccMeter(settings['cls_num'])
+ #        init_lr = self.args.lr
+ #        info = {'n_loss': [],
+ #                'n_acc': [],
+ #                'c_loss': [],
+ #                'c_acc': [],
+ #                'p_loss': [],
+ #                'p_mae': []
+ #                }
+ #        cls_tags = 0
+ #        K = settings['cls_num']
+ #        N = len(dataset)
+ #        q = np.ones(K)/K     # cls distribution
+ #        p = np.ones(N)/N     # instance distribution
+ #
+ #        C = np.ones([N, K]) * np.log(K) / N  # prob_tensor  (cost function)
+ #        P = np.ones([N, K]) / (K * N)  # the tag is a prob distribution
+ #
+ #        for epoch in range(self.args.ft_epochs):
+ #            n_loss_meter.reset()
+ #            c_loss_meter.reset()
+ #            p_loss_meter.reset()
+ #            n_acc_meter.reset()
+ #            c_acc_meter.reset()
+ #            p_mae_meter.reset()
+ #            model.train()
+ #
+ #            # prepare pesudo labels via optimal transport
+ #            if epoch % settings['cls_epochs'] == 1:
+ #                time0 = time.time()
+ #                P = ot.sinkhorn(p, q, C, 0.04)
+ #                print('optimal transport finished {}'.format(time.time() -time0))
+ #            for idx, (mols, n_label, ids) in enumerate(train_loader):
+ #                g = dgl.batch([mol.ful_g for mol in mols])
+ #                g.to(device)
+ #                n_label = n_label.to(device)
+ #
+ #                # Mask node features
+ #                mask = torch.randint(0, g.number_of_nodes(), [int(self.args.mask_n_ratio * g.number_of_nodes())])
+ #                g.ndata['nodes'][mask] = 0
+ #
+ #                # make pesudo labels vis k means
+ #                cls_labels = N * torch.tensor(P[list(ids)],requires_grad=False).to(device).float()
+ #
+ #                atom_preds, cls_preds, prop_preds = model(g)
+ #                cls_logits = torch.log(F.softmax(cls_preds, dim=1))
+ #
+ #                n_pred_cls = torch.argmax(atom_preds, dim=1)
+ #                p_pred_cls = torch.argmax(prop_preds, dim=1)
+ #
+ #                n_loss = loss_fn(atom_preds[mask], n_label[mask])
+ #                c_loss = torch.sum(- cls_labels * cls_logits, dim=1).mean()
+ #
+ #                p_loss = torch.Tensor([0.]).to(device)
+ #                if level == 'w':
+ #                    p_loss = loss_fn(prop_preds, p_labels[list(ids)])
+ #
+ #                loss = c_loss + n_loss + p_loss
+ #
+ #                optimizer.zero_grad()
+ #                loss.backward()
+ #                optimizer.step()
+ #
+ #                C[idx * self.args.batchsize:idx * self.args.batchsize + len(mols)] = - cls_logits.detach().cpu().numpy()
+ #
+ #                n_loss_meter.add(n_loss.detach().item())
+ #                c_loss_meter.add(c_loss.detach().item())
+ #                n_acc_meter.add(n_pred_cls, n_label)
+ #                # c_acc_meter.add(c_pred_cls, cls_labels)
+ #                p_loss_meter.add(p_loss.detach().item())
+ #                p_acc_meter.add(p_pred_cls, p_labels[list(ids)]) if p_labels is not None else p_acc_meter.add(
+ #                    p_pred_cls, torch.zeros_like(p_pred_cls).long())
+ #
+ #                if idx % 50 == 0 and self.args.use_tb:
+ #                    acc = 100 * sum(n_acc_meter.value()[i, i] for i in range(10)) / n_acc_meter.value().sum()
+ #                    writer.add_scalar('n_train_loss', n_loss_meter.value()[0],
+ #                                      int((idx + 1 + epoch * len(train_loader)) / 50))
+ #                    writer.add_scalar('n_train_acc', acc, int((idx + 1 + epoch * len(train_loader)) / 50))
+ #                    print('training loss {} acc {}'.format(n_loss_meter.value()[0], acc))
+ #
+ #            # n_loss_test, n_acc_test= test(args,test_loader,model,device)
+ #
+ #            n_acc = 100 * sum(n_acc_meter.value()[i, i] for i in range(100)) / n_acc_meter.value().sum()
+ #            p_acc = 100 * sum(
+ #                p_acc_meter.value()[i, i] for i in range(settings['prop_bins'])) / p_acc_meter.value().sum()
+ #            print(
+ #                "Epoch {:2d}, training: loss: {:.7f}, acc: {:.7f}  self-clustering: loss: {:.7f}  props: loss {} acc {} level {}".format(
+ #                    epoch, n_loss_meter.value()[0], n_acc, c_loss_meter.value()[0], p_loss_meter.value()[0], p_acc, level))
+ #            if (epoch + 1) % 100 == 0:
+ #                init_lr = init_lr / 1
+ #                for param_group in optimizer.param_groups:
+ #                    param_group['lr'] = init_lr
+ #                print('current learning rate: {}'.format(init_lr))
+ #
+ #            info['n_loss'].append(n_loss_meter.value()[0])
+ #            info['n_acc'].append(n_acc)
+ #            info['c_loss'].append(c_loss_meter.value()[0])
+ #            # info['c_acc'].append(100 * c_acc_meter.value())
+ #            info['p_loss'].append(p_loss_meter.value()[0])
+ #            info['p_acc'].append(p_acc)
+ #            self.iters += 1
+ #        return info

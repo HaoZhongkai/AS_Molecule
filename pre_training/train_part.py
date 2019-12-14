@@ -14,7 +14,7 @@ import pickle
 
 sys.path.append('..')
 from utils.funcs import *
-from base_model.schmodel import SchNetModel
+from base_model.schmodel import SchNetModel,SchNet
 from bayes_al.mc_sch import MC_SchNetModel
 from bayes_al.mm_sch import MM_SchNetModel
 from config import *
@@ -49,7 +49,7 @@ def train(args,train_dataset,test_dataset, model,optimizer, writer,device):
             g = dgl.batch([mol.ful_g for mol in mols])
             g.to(device)
             label = label.to(device)
-            res = model.inference(g).squeeze()
+            res = model(g).squeeze()
             loss = loss_fn(res, label)
             mae = MAE_fn(res, label)
 
@@ -66,7 +66,7 @@ def train(args,train_dataset,test_dataset, model,optimizer, writer,device):
         loss_test, mae_test = test(args,test_loader,model,device)
         print("Epoch {:2d}, training: loss: {:.7f}, mae: {:.7f} test: loss{:.7f}, mae:{:.7f}".format(epoch, mse_meter.value()[0], mae_meter.value()[0],loss_test,mae_test))
         if (epoch+1) % 100 == 0:
-            init_lr = init_lr / 1
+            init_lr = init_lr *1
             for param_group in optimizer.param_groups:
                 param_group['lr'] = init_lr
             print('current learning rate: {}'.format(init_lr))
@@ -107,20 +107,20 @@ if __name__ == "__main__":
     args = make_args()
 
     if args.use_default is False:
-        args.epochs = 600
+        args.epochs = 300
         args.batchsize = 64
-        args.lr = 3e-4
-        args.use_tb = True
+        args.lr = 1e-3
+        args.use_tb = False
         args.dataset = 'qm9'
-        args.device = 0
+        args.device = 1
         args.save_model = True
         args.workers = 0
         args.shuffle = True
         args.multi_gpu = False
-        args.prop_name = 'homo'
+        args.prop_name = 'lumo'
     print(args)
 
-    train_data_num = 10000
+    train_data_num = 70000
 
 
 
@@ -133,7 +133,7 @@ if __name__ == "__main__":
 
 
     # train_part
-    train_set = MoleDataset(mols=random.sample(train_set.mols,train_data_num))
+    train_set = MoleDataset(mols=random.sample(train_set.mols,train_data_num),prop_name=args.prop_name)
 
 
     device = torch.device('cuda:'+str(args.device) if torch.cuda.is_available() else 'cpu')
@@ -144,10 +144,10 @@ if __name__ == "__main__":
         writer = None
 
 
-    # model = SchNetModel(dim=48,n_conv=4,cutoff=5.0,width=0.5,norm=True, output_dim=1)
-    # model = MC_SchNetModel(dim=32,n_conv=4,cutoff=5.0,width=0.5,norm=True, output_dim=1)
-    # model = SchNetModel(dim=128,n_conv=4,cutoff=30.0,width=0.1,norm=True, output_dim=1)
-    model = MM_SchNetModel(dim=128,n_conv=4,cutoff=30.0,width=0.1,norm=True, output_dim=1,mask_rate=0.3)
+    model = SchNet(dim=96,n_conv=3,cutoff=30,width=0.1,norm=True, output_dim=1)
+    # model = MC_SchNetModel(dim=96,n_conv=4,cutoff=30.0,width=0.1,norm=True, output_dim=1)
+    # model = SchNetModel(dim=96,n_conv=4,cutoff=30.0,width=0.1,norm=True, output_dim=1)
+    # model = MM_SchNetModel(dim=128,n_conv=4,cutoff=30.0,width=0.1,norm=True, output_dim=1,mask_rate=0.3)
 
 
     # run a mini SchNet model

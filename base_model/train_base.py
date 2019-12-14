@@ -119,7 +119,7 @@ if __name__ == "__main__":
         args.workers = 0
         args.shuffle = True
         args.multi_gpu = False
-        args.prop_name = 'homo'
+        args.prop_name = 'lumo'
     print(args)
 
 
@@ -140,8 +140,8 @@ if __name__ == "__main__":
         writer = SummaryWriter(log_dir=logs_path,comment='baseline_sch')
     else:
         writer = None
-    model = SchNetModel(dim=128,n_conv=3,cutoff=30.0,width=0.05,norm=True, output_dim=1)
-    optimizer = torch.optim.Adam(model.parameters(), lr=3e-4)
+    model = SchNetModel(dim=96,n_conv=3,cutoff=30.0,width=0.1,norm=True, output_dim=1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     if args.multi_gpu:
         model = DataParallel(model,device_ids=[i for i in range(torch.cuda.device_count())])
