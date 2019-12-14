@@ -68,7 +68,7 @@ def active_learning(input):
 
         preds = al_inferencer.run(model,train_dataset,device)
         new_batch_ids = al_sampler.query(preds)
-        train_subset_ids = al_sampler.generate_subset(new_batch_ids)
+        train_subset_ids = al_sampler.get_label_ids()
         # train_mols.extend([train_dataset.mols[i] for i in new_batch_ids])
         train_subset = MoleDataset(mols=[train_dataset.mols[i] for i in train_subset_ids])
 
@@ -160,7 +160,7 @@ if __name__ == "__main__":
         'lr':1e-4,
         'epochs':150,
         'batch_size':64,
-        'n_patience':30
+        'n_patience':40
 
     }
 
