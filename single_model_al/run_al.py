@@ -157,7 +157,7 @@ if __name__ == "__main__":
         'atom_ref':None,
         'pre_train':None,
 
-        'lr':1e-4,
+        'lr':1e-3,
         'epochs':150,
         'batch_size':64,
         'n_patience':40

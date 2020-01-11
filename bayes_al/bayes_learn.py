@@ -163,7 +163,7 @@ def bald_learn(args,config,train_dataset,test_dataset,model,optimizer,writer,dev
 if __name__ == "__main__":
     config = Global_Config()
     args = make_args()
-
+    args.use_default = False
     if args.use_default is False:
         args.batchsize = 64
         args.epochs = 300
@@ -175,12 +175,12 @@ if __name__ == "__main__":
         args.shuffle = True
         args.multi_gpu = False
         args.prop_name = 'homo'
-        args.lr = 3e-4
+        args.lr = 1e-3
 
         args.init_data_num = 5000
         args.bald_ft_epochs = 10
-        args.batch_data_num = 100
-        args.test_freq = 10
+        args.batch_data_num = 1000
+        args.test_freq = 1
         args.mc_sampling_num = 50
 
     print(args)
@@ -196,7 +196,7 @@ if __name__ == "__main__":
         writer = SummaryWriter(log_dir=logs_path, comment='baseline_sch')
     else:
         writer = None
-    model = MC_SchNetModel(dim=32, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
+    model = MC_SchNetModel(dim=96, n_conv=4, cutoff=30.0, width=0.1, norm=True, output_dim=1)
     print(model)
     optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)
 

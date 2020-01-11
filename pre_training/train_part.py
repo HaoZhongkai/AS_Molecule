@@ -107,22 +107,21 @@ if __name__ == "__main__":
     args = make_args()
 
     if args.use_default is False:
-        args.epochs = 300
-        args.batchsize = 64
+        args.epochs = 2
+        args.batchsize = 32
         args.lr = 1e-3
         args.use_tb = False
         args.dataset = 'qm9'
-        args.device = 1
+        args.device = 0
         args.save_model = True
         args.workers = 0
         args.shuffle = True
         args.multi_gpu = False
-        args.prop_name = 'lumo'
+        args.prop_name = 'homo'
+        args.train_data_num = 5000
     print(args)
 
-    train_data_num = 70000
-
-
+    result_path = config.PATH + '/datasets/rd/' + args.dataset +str(args.train_data_num) + time.strftime('_%m%d_%H_%M.txt')
 
     logs_path = config.PATH+'/datasets/logs'+ time.strftime('/%m%d_%H_%M')
 
@@ -133,7 +132,7 @@ if __name__ == "__main__":
 
 
     # train_part
-    train_set = MoleDataset(mols=random.sample(train_set.mols,train_data_num),prop_name=args.prop_name)
+    train_set = MoleDataset(mols=random.sample(train_set.mols,args.train_data_num),prop_name=args.prop_name)
 
 
     device = torch.device('cuda:'+str(args.device) if torch.cuda.is_available() else 'cpu')
@@ -143,8 +142,10 @@ if __name__ == "__main__":
     else:
         writer = None
 
+    atom_ref = get_atom_ref(args.prop_name)
+    model = SchNetModel(dim=128,n_conv=4,cutoff=30.0,width=0.1,norm=False, output_dim=1,atom_ref=atom_ref)
 
-    model = SchNet(dim=96,n_conv=3,cutoff=30,width=0.1,norm=True, output_dim=1)
+    # model = SchNet(dim=128,n_conv=3,cutoff=30,width=0.1,norm=True, output_dim=1)
     # model = MC_SchNetModel(dim=96,n_conv=4,cutoff=30.0,width=0.1,norm=True, output_dim=1)
     # model = SchNetModel(dim=96,n_conv=4,cutoff=30.0,width=0.1,norm=True, output_dim=1)
     # model = MM_SchNetModel(dim=128,n_conv=4,cutoff=30.0,width=0.1,norm=True, output_dim=1,mask_rate=0.3)
@@ -162,9 +163,20 @@ if __name__ == "__main__":
 
     info = train(args,train_set,test_set,model,optimizer, writer, device)
 
+    with open(result_path, 'w') as fp:
+        for key in info.keys():
+            fp.write(str(key) + '\t')
+        fp.write('\n')
+
+        for i in range(len(info['test_mae'])):
+            for key in info.keys():
+                fp.write(str(info[key][i])+'\t')
+            fp.write('\n')
+
+
     if args.save_model:
         torch.save({'model_state_dict':model.state_dict(),
                     'optimizier_state_dict':optimizer.state_dict(),
-                    'info':info,
+                    'info':info
                     },config.save_model_path(args.dataset))
 

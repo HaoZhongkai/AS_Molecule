@@ -20,6 +20,27 @@ def get_mol(data):
 
 # PROPID = {'optical_lumo':0,'gap':1,'homo':2,'lumo':3,'spectral_overlap':4,'delta_homo':5,'delta_lumo':6,'delta_optical_lumo':7,'homo_extrapolated':8,'lumo_extrapolated':9,'gap_extrapolated':10,'optical_lumo_extrapolated':11}
 
+
+def get_atom_ref(prop_name=None):
+    atom_ref_ids = [1,6,7,8,9]  # H,C,N,O,F
+    atom_refs = {'zpve' : torch.Tensor([    0    ,     0    ,     0    ,    0     ,    0     ]),
+                 'U0'   : torch.Tensor([-0.500273,-37.846772,-54.583861,-75.064579,-99.718730]),
+                 'U'    : torch.Tensor([-0.498857,-37.845355,-54.582445,-75.063163,-99.717314]),
+                 'H'    : torch.Tensor([-0.497912,-37.844411,-54.581501,-75.062219,-99.716370]),
+                 'G'    : torch.Tensor([-0.510927,-37.861317,-54.598897,-75.079532,-99.733544]),
+                 'Cv'   : torch.Tensor([  2.981  ,   2.981  ,   2.981  ,   2.981  ,   2.981  ])
+                 }
+    atom_ref = torch.zeros([100])
+    if prop_name in ['zpve','U0','U','H','G','Cv']:
+        atom_ref[atom_ref_ids] = atom_refs[prop_name]
+        atom_ref = atom_ref.unsqueeze(1)
+
+    else:
+        atom_ref = None
+    return atom_ref
+
+
+
 class Molecule():
     EDGE_TYPE = [
         Chem.BondType.SINGLE,
@@ -98,7 +119,36 @@ class Molecule():
 
 
 
+class Molecule_MD(object):
+    NODE_TYPE = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9, 'Si': 14, 'P': 15, 'S': 16, 'Cl': 17}
+    def __init__(self, coords, atoms, forces, props, distance):
 
+        self.coordinates = torch.tensor(coords)
+        self.atoms = atoms      # types corresponds to coordiantes
+        self.forces = torch.tensor(forces)
+        self.node_num = len(atoms)
+
+
+        self.props = props
+
+        self._build_nidx()
+        self._build_ful()
+
+    def _build_ful(self):
+        self.ful_g = dgl.DGLGraph()
+        self.ful_g.add_nodes(self.node_num)
+        self.ful_g.add_edges([i for i in range(self.node_num) for j in range(self.node_num)],
+                             [j for i in range(self.node_num) for j in range(self.node_num)])
+        # self.ful_g.add_edges(self.ful_g.nodes(), self.ful_g.nodes())    #add self edge
+        self.ful_g.ndata['pos'] = self.coordinates
+        self.ful_g.ndata['pos'] = self.forces
+        self.ful_g.ndata['nodes'] = self.nidx
+
+    def _build_nidx(self):
+        self.nidx = torch.zeros(self.node_num).long()
+        for i in range(self.node_num):
+            self.nidx[i] = Molecule.NODE_TYPE[self.atoms[i]]
+        return
 
 
 
