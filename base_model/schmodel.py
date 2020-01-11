@@ -24,8 +24,7 @@ class AtomEmbedding(nn.Module):
         self._dim = dim
         self._type_num = type_num
         if pre_train is not None:
-            self.embedding = nn.Embedding.from_pretrained(pre_train,
-                                                          padding_idx=0)
+            self.embedding = nn.Embedding.from_pretrained(pre_train)
         else:
             self.embedding = nn.Embedding(type_num, dim, padding_idx=0)
 
@@ -403,7 +402,7 @@ class SchNetModel(nn.Module):
         if self.norm:
             g.ndata["res"] = g.ndata[
                 "res"] * self.std_per_atom + self.mean_per_atom
-        res = dgl.mean_nodes(g, "res")
+        res = dgl.sum_nodes(g, "res")
         return res
 
 if __name__ == "__main__":

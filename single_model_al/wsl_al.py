@@ -10,7 +10,7 @@ sys.path.append('..')
 
 from pre_training.wsch import WSchnet, Semi_Schnet
 from single_model_al.sampler import AL_sampler, Inferencer, check_point_test, save_cpt_xlsx, Weakly_Supervised_Trainer, get_preds_w
-from utils.funcs import MoleDataset, k_center, SelfMolDataSet, k_medoid
+from utils.funcs import MoleDataset, k_center, SelfMolDataSet, k_medoid, get_atom_ref
 from config import Global_Config, make_args
 
 
@@ -151,28 +151,31 @@ if __name__ == "__main__":
     ft_epochs = args.ft_epochs
 
     checkpoint_data_num =   [5000,10000,20000,30000,40000,50000,60000,70000]
-    checkpoint_epochs_num = [1500,1000 ,1000 ,1000 ,600  ,400  ,300  ,300]
+    # checkpoint_epochs_num = [1500, 1000 ,1000 ,1000 ,600  ,400  ,300  ,300]
+    checkpoint_epochs_num = [800, 500 ,500 ,500 ,400  ,200  ,200  ,200]
+
+    # checkpoint_epochs_num = [2,2,2,2,2,2,2,2]
     al_settings = {
-        'dim':128,
+        'dim':96,
         'n_conv':4,
         'cutoff':30.0,
         'width':0.1,
-        'norm':True,
+        'norm':False,
         'output_dim':1,
-        'atom_ref':None,
+        'atom_ref':get_atom_ref(args.prop_name),
         'pre_train':None,
 
         'lr':1e-3,
         'epochs':150,
-        'batch_size':32,
+        'batch_size':64,
         'n_patience':55,
 
         'cls_method':'ot',
         'prop_bins':25,
-        'cls_num':1000,
+        'cls_num':100,
         'cls_epochs':6,
         'iters':6,
-        'init_method':'random',
+        'init_method':'k_medroids',
 
 
 
@@ -196,9 +199,9 @@ if __name__ == "__main__":
         writer = None
 
 
-
+    # atom_ref = get_atom_ref(args.prop_name)
     # model = WSchnet(dim=256, n_conv=4, cutoff=30.0, width=0.1, norm=True, output_dim=1,props_bins=al_settings['prop_bins'],cls_dim=al_settings['cls_num'])
-    model = Semi_Schnet(dim=128,n_conv=4,cutoff=30.0,cls_dim=al_settings['cls_num'],width=0.1,norm=True, output_dim=1,edge_bins=150,mask_n_ratio=args.mask_n_ratio,mask_msg_ratio=0,props_bins=al_settings['prop_bins'])
+    model = Semi_Schnet(dim=96,n_conv=4,cutoff=30.0,cls_dim=al_settings['cls_num'],width=0.1,norm=False, output_dim=1,edge_bins=150,mask_n_ratio=args.mask_n_ratio,mask_msg_ratio=0,props_bins=al_settings['prop_bins'],atom_ref=al_settings['atom_ref'])
 
 
     optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)

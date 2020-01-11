@@ -13,13 +13,24 @@ class Bayes_sampler(object):
     # query by TODO: the calculation of variance need to be checked
     def query(self,preds):
         time0 = time.time()
-        variance = np.std(preds, axis=1).squeeze()
+        preds_unlabeled = preds[self.data_ids]
+        variance = np.std(preds_unlabeled,axis=1)
         vars_ids = np.stack([variance, np.arange(0, len(variance))], axis=0)
         queries = vars_ids[:, vars_ids[0].argsort()]
         query_ids = queries[1].astype(int)[-self.batch_data_num:]  # query id according to new dataset
         # query_data_ids = queries[2].astype(int)[-self.batchnum:]       #query id according to origin dataset(whole)
-        query_data_ids = self.data_ids[query_ids]
+        new_batch_ids = self.data_ids[query_ids]
         self.data_ids = np.delete(self.data_ids, query_ids)  # del from unlabeled
         print('query new data  {}'.format(time.time() - time0))
-        return query_data_ids
+        return new_batch_ids
+        # time0 = time.time()
+        # variance = np.std(preds, axis=1).squeeze()
+        # vars_ids = np.stack([variance, np.arange(0, len(variance))], axis=0)
+        # queries = vars_ids[:, vars_ids[0].argsort()]
+        # query_ids = queries[1].astype(int)[-self.batch_data_num:]  # query id according to new dataset
+        # # query_data_ids = queries[2].astype(int)[-self.batchnum:]       #query id according to origin dataset(whole)
+        # query_data_ids = self.data_ids[query_ids]
+        # self.data_ids = np.delete(self.data_ids, query_ids)  # del from unlabeled
+        # print('query new data  {}'.format(time.time() - time0))
+        # return query_data_ids
 

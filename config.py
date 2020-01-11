@@ -32,13 +32,13 @@ def make_args():
     parser = ArgumentParser()
     parser.add_argument('--batchsize', type=int, default=64,
                         help='batch size')
-    parser.add_argument("--epochs", type=int, default=15,
+    parser.add_argument("--epochs", type=int, default=600,
                         help="number of epochs")
     parser.add_argument('--use_tb', type=bool, default=False,
                         help='whether use tensorboard for logs')
     parser.add_argument('--device', type=int, default=1,
                         help='which gpu to use if any (default: 0)')
-    parser.add_argument('--dataset', type=str, default='qm9',
+    parser.add_argument('--dataset', type=str, default='OPV',
                         help='which dataset to use')
     parser.add_argument('--save_model', default=True,
                         help='whether save the model')
@@ -48,11 +48,13 @@ def make_args():
                         help='whether shuffle data before training')
     parser.add_argument('--multi_gpu', default=False,
                         help='use multi gpu for training')
-    parser.add_argument('--use_default',default=False,
+    parser.add_argument('--use_default',default=True,
                         help='whether use augments in args')
     parser.add_argument('--lr',default=1e-3,
                         help='learning rate')
 
+    parser.add_argument('--train_data_num', type=int, default=80000,
+                        help='use how many training data')
 
     # prediction
     parser.add_argument('--prop_name', default='homo',
@@ -66,6 +68,8 @@ def make_args():
 
     #qbc settings
     parser.add_argument('--qbc_ft_epochs', default=5)
+    parser.add_argument('--process_num', type=int, default=4,
+                        help='how many cards or process you want')
     parser.add_argument('--model_num',default=4)
     parser.add_argument('--test_use_all',default=False,
                         help='whether use all models when testing')
@@ -91,7 +95,7 @@ def make_args():
                         help='AL method in run_al.py, must be in random, bayes, k_center, msg_mask, dropout')
     parser.add_argument('--ft_method',type=str,default='fixed_epochs',
                         help='finetuning method in run_al.py, must be in fixed_epochs, varying_epochs, by_valid')
-    parser.add_argument('--ft_epochs',type=int,default=30,
+    parser.add_argument('--ft_epochs',type=int,default=20,
                         help='the max epochs number for fixed epochs finetuning')
     parser.add_argument('--re_init',type=bool,default=False,
                         help='whether to re-initialize the model after each iteration, advised to use by_valid ft_method if set True')

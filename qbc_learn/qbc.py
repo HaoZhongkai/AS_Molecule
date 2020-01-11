@@ -245,10 +245,10 @@ if __name__ =="__main__":
     args = make_args()
 
     if args.use_default is False:
-        args.batchsize = 64
-        args.epochs = 300
+        args.batchsize = 32
+        args.epochs = 600
         args.use_tb = False
-        args.dataset = 'qm9'
+        args.dataset = 'OPV'
         args.device = 1
         args.save_model = True
         args.workers = 0
@@ -257,15 +257,16 @@ if __name__ =="__main__":
         args.prop_name = 'homo'
         args.lr = 1e-3
         args.workers = 10
-        args.qbc_ft_epochs = 6
+        args.qbc_ft_epochs = 10
 
 
-        args.batch_data_num = 200
+        args.init_data_num = 2000
+        args.batch_data_num = 500
 
 
 
-        args.model_num = 1
-        args.process_num = 1
+        args.model_num = 8
+        args.process_num = 4
         args.test_freq = 10
 
     if args.process_num>torch.cuda.device_count():
@@ -286,7 +287,7 @@ if __name__ =="__main__":
 
     models = []
     for i in range(args.model_num):
-        models.append(SchNetModel(dim=32, n_conv=4,cutoff=5.0, width=0.5, norm=True, output_dim=1))
+        models.append(SchNetModel(dim=96, n_conv=4,cutoff=30.0, width=0.1, norm=True, output_dim=1))
         print(models[-1])
 
     optimizer_ = torch.optim.Adam

@@ -50,9 +50,8 @@ def train(args,train_dataset,test_dataset, model,optimizer, writer,device):
 
             loss = loss_fn(res, label)
             mae = MAE_fn(res, label)
-            if loss>1e3:
-                print('dsdsdsds')
-                print('23')
+            # if loss>1e3:
+            #     print('loss more than 1e3')
 
             optimizer.zero_grad()
             loss.backward()
@@ -69,7 +68,7 @@ def train(args,train_dataset,test_dataset, model,optimizer, writer,device):
 
         print("Epoch {:2d}, training: loss: {:.7f}, mae: {:.7f} test: loss{:.7f}, mae:{:.7f}".format(epoch, mse_meter.value()[0], mae_meter.value()[0],loss_test,mae_test))
         if (epoch+1) % 100 == 0:
-            init_lr = init_lr / 1
+            init_lr = init_lr / 2
             for param_group in optimizer.param_groups:
                 param_group['lr'] = init_lr
             print('current learning rate: {}'.format(init_lr))
@@ -110,16 +109,16 @@ if __name__ == "__main__":
     args = make_args()
 
     if args.use_default is False:
-        args.epochs = 250
-        args.batchsize = 64
-        args.use_tb = True
+        args.epochs = 400
+        args.batchsize = 32
+        args.use_tb = False
         args.dataset = 'qm9'
         args.device = 1
         args.save_model = True
         args.workers = 0
         args.shuffle = True
         args.multi_gpu = False
-        args.prop_name = 'lumo'
+        args.prop_name = 'U0'
     print(args)
 
 
@@ -140,7 +139,11 @@ if __name__ == "__main__":
         writer = SummaryWriter(log_dir=logs_path,comment='baseline_sch')
     else:
         writer = None
-    model = SchNetModel(dim=96,n_conv=3,cutoff=30.0,width=0.1,norm=True, output_dim=1)
+
+    atom_ref = get_atom_ref(args.prop_name)
+    # atom_ref = None
+
+    model = SchNetModel(dim=128,n_conv=4,cutoff=30.0,width=0.1,norm=False, output_dim=1,atom_ref=atom_ref)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     if args.multi_gpu:

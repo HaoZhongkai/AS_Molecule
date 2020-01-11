@@ -907,7 +907,7 @@ class Semi_Schnet(nn.Module):
         g.ndata["prop"] = self.prop_regressor(g.ndata["res"]).squeeze()
 
         if self.atom_ref is not None:
-            g.ndata["prop"] = g.ndata["prop"] + g.ndata["e0"]
+            g.ndata["prop"] = g.ndata["prop"] + g.ndata["e0"].squeeze()
         #
         if self.norm:
             g.ndata["prop"] = g.ndata["prop"] * self.std_per_atom.to(atom.device) + self.mean_per_atom.to(atom.device)
@@ -921,7 +921,8 @@ class Semi_Schnet(nn.Module):
         cls_preds = self.cls_classifier(embeddings_g)
 
 
-        prop_preds = dgl.mean_nodes(g,'prop')
+        # prop_preds = dgl.mean_nodes(g,'prop')
+        prop_preds = dgl.sum_nodes(g,'prop')
 
         return atom, atoms_preds, edge_preds, (src_ids, dst_ids, mask),cls_preds, embeddings_g, prop_preds
 

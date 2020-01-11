@@ -41,19 +41,19 @@ if __name__ == '__main__':
     # manager = Manager()
 
 
-    path = config.PATH+'/datasets/OPV/data_elem_train.pkl'
-    # path = config.PATH+'/datasets/OPV/data_elem_test.pkl'
+    # path = config.PATH+'/datasets/OPV/data_elem_train.pkl'
+    path = config.PATH+'/datasets/OPV/data_elem_test.pkl'
 
-    save_path = [config.PATH+'/datasets/OPV/opv_mol_train1.pkl',
-                 config.PATH+'/datasets/OPV/opv_mol_train2.pkl',
-                 config.PATH+'/datasets/OPV/opv_mol_train3.pkl',
-                 config.PATH+'/datasets/OPV/opv_mol_train4.pkl',
-                 config.PATH+'/datasets/OPV/opv_mol_train5.pkl',
+    # save_path = [config.PATH+'/datasets/OPV/opv_mol_train1.pkl',
+    #              config.PATH+'/datasets/OPV/opv_mol_train2.pkl',
+    #              config.PATH+'/datasets/OPV/opv_mol_train3.pkl',
+    #              config.PATH+'/datasets/OPV/opv_mol_train4.pkl',
+    #              config.PATH+'/datasets/OPV/opv_mol_train5.pkl',
+    #
+    #              ]
+    save_path = config.PATH+'/datasets/OPV/opv_mol_test.pkl'
 
-                 ]
-    # save_path = config.PATH+'/datasets/OPV/opv_mol_test.pkl'
-
-    dataset = MoleDataset(path,'homo',False,True)
+    dataset = MoleDataset(path=path,prop_name='homo',loc=False,glob=True)
     dataset.build()
     dataset.save_mol(save_path)
     print('ok')

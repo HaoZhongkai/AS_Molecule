@@ -675,7 +675,11 @@ class Weakly_Supervised_Trainer(object):
             # prepare pesudo labels via optimal transport
             if epoch % settings['cls_epochs'] == 1:
                 time0 = time.time()
-                Q = ot.sinkhorn(p, q, C, 0.04)
+
+
+                # Q = ot.sinkhorn(p, q, C, 0.04)
+
+
                 print('optimal transport finished {}'.format(time.time() -time0))
             for idx, (mols, n_label, ids) in enumerate(train_loader):
                 g = dgl.batch([mol.ful_g for mol in mols])
@@ -709,11 +713,17 @@ class Weakly_Supervised_Trainer(object):
 
                 # loss = c_loss + n_loss + e_loss + p_loss* 5e4
                 # For AB study
-                loss = c_loss + p_loss* 1e4
+                # loss = n_loss + e_loss + p_loss* 4e4
+                # For vanilla k center
+                loss = p_loss* 5e4
+                if level == 'w':
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                # optimizer.zero_grad()
+                # loss.backward()
+                # optimizer.step()
 
                 C[idx * self.args.batchsize:idx * self.args.batchsize + len(mols)] = - cls_logits.detach().cpu().numpy()
 
@@ -810,7 +820,12 @@ def check_point_test(settings,train_dataset,test_dataset, teacher_model,max_epoc
     dim, cutoff, output_dim, width, n_conv, norm, atom_ref, pre_train = settings['dim'], settings['cutoff'], settings['output_dim'], settings['width'], settings['n_conv'], settings['norm'], settings['atom_ref'], settings['pre_train']
     lr, epochs, batch_size, n_patience = settings['lr'], settings['epochs'], settings['batch_size'], settings['n_patience']
     model = SchNetModel(dim=dim, cutoff=cutoff, output_dim=output_dim,width= width, n_conv=n_conv, norm=norm, atom_ref=atom_ref, pre_train=pre_train)
-    model.load_state_dict(copy.deepcopy(teacher_model.state_dict()),strict=False)
+
+
+    # model.load_state_dict(copy.deepcopy(teacher_model.state_dict()),strict=False)
+
+
+
     optimizer = Adam(model.parameters(),lr=lr)
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, collate_fn=batcher,
                               shuffle=True, num_workers=0)

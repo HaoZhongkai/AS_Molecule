@@ -204,13 +204,17 @@ class MC_Interaction(nn.Module):
         self.mc_drop2 = nn.Dropout(self._dropout)
         self.mc_drop3 = nn.Dropout(self._dropout)
 
+        self.bn1 = nn.BatchNorm1d(dim)
+        self.bn2 = nn.BatchNorm1d(dim)
+        self.bn3 = nn.BatchNorm1d(dim)
+
     def forward(self, g):
 
-        g.ndata["new_node"] = self.mc_drop1(self.node_layer1(g.ndata["node"]))
+        g.ndata["new_node"] = self.mc_drop1(self.bn1(self.node_layer1(g.ndata["node"])))
         cf_node = self.cfconv(g)
-        cf_node_1 = self.mc_drop2(self.node_layer2(cf_node))
+        cf_node_1 = self.mc_drop2(self.bn2(self.node_layer2(cf_node)))
         cf_node_1a = self.activation(cf_node_1)
-        new_node = self.mc_drop3(self.node_layer3(cf_node_1a))
+        new_node = self.mc_drop3(self.bn3(self.node_layer3(cf_node_1a)))
         g.ndata["node"] = g.ndata["node"] + new_node
         return g.ndata["node"]
 

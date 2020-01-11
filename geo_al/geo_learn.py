@@ -21,7 +21,9 @@ def get_preds(args,model,dataset,device):
     embeddings = []
     with torch.no_grad():
         for idx,(mols,_) in enumerate(dataloader):
-            _,embedding = model(mols,device)
+            g = dgl.batch([mol.ful_g for mol in mols])
+            g.to(device)
+            embedding = model.inference(g)
             embeddings.append(embedding)
 
     embeddings = torch.cat(embeddings,dim=0)
@@ -52,7 +54,9 @@ def finetune(args,train_dataset,model,optimizer,writer,info,device,iter):
         model.train()
         for idx, (mols, label) in enumerate(train_loader):
             label = label.to(device)
-            res = model(mols,device)[0].squeeze()   # use SchEmbedding model
+            g = dgl.batch([mol.ful_g for mol in mols])
+            g.to(device)
+            res = model(g)[0].squeeze()   # use SchEmbedding model
             loss = loss_fn(res, label)
             mae = MAE_fn(res, label)
 
@@ -92,8 +96,9 @@ def test(args, test_set,model,device):
         for idx, (mols, label) in enumerate(test_loader):
 
             label = label.to(device)
-
-            res = model(mols,device)[0].squeeze()
+            g = dgl.batch([mol.ful_g for mol in mols])
+            g.to(device)
+            res = model(g)[0].squeeze()
             loss = loss_fn(res, label)
             mae = MAE_fn(res, label)
             mae_meter.add(mae.detach().item())
@@ -155,7 +160,7 @@ if __name__ == "__main__":
         args.epochs = 300
         args.use_tb = False
         args.dataset = 'qm9'
-        args.device = 0
+        args.device = 2
         args.save_model = True
         args.workers = 0
         args.shuffle = True
@@ -163,10 +168,10 @@ if __name__ == "__main__":
         args.prop_name = 'homo'
         args.lr = 1e-3
 
-        args.init_data_num = 5000
-        args.k_center_ft_epochs = 4
-        args.batch_data_num = 100
-        args.test_freq = 10
+        args.init_data_num = 1000
+        args.k_center_ft_epochs = 20
+        args.batch_data_num = 2000
+        args.test_freq = 1
 
 
     print(args)
@@ -182,7 +187,7 @@ if __name__ == "__main__":
         writer = SummaryWriter(log_dir=logs_path, comment='baseline_sch')
     else:
         writer = None
-    model = SchEmbedding(dim=32, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
+    model = SchEmbedding(dim=96, n_conv=4, cutoff=30, width=0.1, norm=True, output_dim=1)
     print(model)
     optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)
 

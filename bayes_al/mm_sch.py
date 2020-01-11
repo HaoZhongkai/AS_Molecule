@@ -234,25 +234,28 @@ class MM_Interaction(nn.Module):
         self.cfconv = CFConv(rbf_dim, dim, act=self.activation)
         self.node_layer2 = nn.Linear(dim, dim)
         self.node_layer3 = nn.Linear(dim, dim)
+        self.bn1 = nn.BatchNorm1d(dim)
+        self.bn2 = nn.BatchNorm1d(dim)
+        self.bn3 = nn.BatchNorm1d(dim)
 
     def forward(self, g):
 
-        g.ndata["new_node"] = self.node_layer1(g.ndata["node"])
+        g.ndata["new_node"] = self.bn1(self.node_layer1(g.ndata["node"]))
         cf_node = self.cfconv(g)
-        cf_node_1 = self.node_layer2(cf_node)
+        cf_node_1 = self.bn2(self.node_layer2(cf_node))
         cf_node_1a = self.activation(cf_node_1)
-        new_node = self.node_layer3(cf_node_1a)
+        new_node = self.bn3(self.node_layer3(cf_node_1a))
         g.ndata["node"] = g.ndata["node"] + new_node
         return g.ndata["node"]
 
 
 
     def message_masking_inference(self,g):
-        g.ndata["new_node"] = self.node_layer1(g.ndata["node"])
+        g.ndata["new_node"] = self.bn1(self.node_layer1(g.ndata["node"]))
         cf_node = self.cfconv.message_masking_inference(g)
-        cf_node_1 = self.node_layer2(cf_node)
+        cf_node_1 = self.bn2(self.node_layer2(cf_node))
         cf_node_1a = self.activation(cf_node_1)
-        new_node = self.node_layer3(cf_node_1a)
+        new_node = self.bn3(self.node_layer3(cf_node_1a))
         g.ndata["node"] = g.ndata["node"] + new_node
         return g.ndata["node"]
 
@@ -312,6 +315,8 @@ class MM_SchNetModel(nn.Module):
 
         self.atom_dense_layer1 = nn.Linear(dim, 64)
         self.atom_dense_layer2 = nn.Linear(64, output_dim)
+
+        self.final_bn = nn.BatchNorm1d(64)
 
     def set_mean_std(self, mean, std):
         self.mean_per_atom = mean.clone().detach()
