@@ -1,9 +1,12 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(),"../..")))
+
 from utils.funcs import Molecule
 import numpy as np
 from multiprocessing import Manager, Process
 import torch
 import dgl
-import sys
 from utils.funcs import MoleDataset
 from config import Global_Config as Config
 config = Config()

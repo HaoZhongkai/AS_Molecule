@@ -1,5 +1,9 @@
 import csv
 import numpy as np
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.getcwd(),"../..")))
+print(sys.path)
 from copy import deepcopy
 from utils.funcs import mol2nx,Molecule
 import pickle
@@ -7,7 +11,7 @@ from rdkit import Chem
 import os
 import multiprocessing as mp
 import networkx as nx
-import sys
+
 from config import Global_Config as Config
 config = Config()
 #data element pos, atoms, edges, smi, props, dists
