@@ -4,6 +4,8 @@ from multiprocessing import Manager, Process
 import torch
 import dgl
 import sys
+
+sys.path.append('..')
 from utils.funcs import MoleDataset2
 from config import Global_Config as Config
 config = Config()
