@@ -1,5 +1,5 @@
 # ASGN
-Active Semi-supervised learning for molecular properties prediction
+
 # Project Structure
 base_model: containing SchNet and training code for qm9 and opv
 
