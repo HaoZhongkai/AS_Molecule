@@ -1,5 +1,8 @@
 # ASGN
 
+The official implementation of the ASGN model.
+Orginal paper: ASGN: An Active Semi-supervised Graph Neural Network for Molecular Property Prediction. KDD'2020 Accepted. 
+
 # Project Structure
 base_model: containing SchNet and training code for qm9 and opv
 
