@@ -83,23 +83,24 @@ config = Global_Config()
 # print(np.mean(res2))
 
 n_bit = 512
+
+
 def smi2vec(smi):
     mol = Chem.MolFromSmiles(smi)
-    bit_vec = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, 4, nBits=n_bit)
+    bit_vec = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol,
+                                                             4,
+                                                             nBits=n_bit)
     vec = [bit_vec[i] for i in range(n_bit)]
 
     return vec
 
 
-
 qm9_data_path_train = config.train_pkl['qm9']
 qm9_data_path_test = config.test_pkl['qm9']
-mols_train = pickle.load(open(qm9_data_path_train,'rb'))
+mols_train = pickle.load(open(qm9_data_path_train, 'rb'))
 smis_train = [mol.smi for mol in mols_train]
-mols_test = pickle.load(open(qm9_data_path_test,'rb'))
+mols_test = pickle.load(open(qm9_data_path_test, 'rb'))
 smis_test = [mol.smi for mol in mols_test]
-
-
 
 time0 = time.time()
 fingerprints_train = [smi2vec(smi) for smi in smis_train]
@@ -116,12 +117,9 @@ pca.fit(fingerprints_train)
 qm9_pca = pca.transform(fingerprints_train)
 qm9_pca_te = pca.transform(fingerprints_test)
 
-
-
-
-print('time {}'.format(time.time()-time0))
-plt.scatter(qm9_pca[:,0],qm9_pca[:,1],marker='.')
-plt.scatter(qm9_pca_te[:,0],qm9_pca_te[:,1],marker='.')
+print('time {}'.format(time.time() - time0))
+plt.scatter(qm9_pca[:, 0], qm9_pca[:, 1], marker='.')
+plt.scatter(qm9_pca_te[:, 0], qm9_pca_te[:, 1], marker='.')
 
 plt.savefig('qm9_pca.png')
 
@@ -129,12 +127,6 @@ plt.savefig('qm9_pca.png')
 # save_path = config.DATASET_PATH['qm9']+'/qm9_fingerprint_'+str(n_components)+'.pkl'
 
 # pickle.dump(qm9_pca_t,open(save_path,'wb'))
-
-
-
-
-
-
 
 # zinc_data = pickle.load(open('zinc_clean_smi.pkl','rb'))
 #

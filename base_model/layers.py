@@ -10,7 +10,6 @@ class AtomEmbedding(nn.Module):
     Convert the atom(node) list to atom embeddings.
     The atom with the same element share the same initial embeddding.
     """
-
     def __init__(self, dim=128, type_num=100, pre_train=None, device='cpu'):
         """
         Randomly init the element embeddings.
@@ -19,7 +18,7 @@ class AtomEmbedding(nn.Module):
             type_num: the largest atomic number of atoms in the dataset
             pre_train: the pre_trained embeddings
         """
-        super(AtomEmbedding,self).__init__()
+        super(AtomEmbedding, self).__init__()
         self._dim = dim
         self._type_num = type_num
         if pre_train is not None:
@@ -42,7 +41,6 @@ class EdgeEmbedding(nn.Module):
     Convert the edge to embedding.
     The edge links same pair of atoms share the same initial embedding.
     """
-
     def __init__(self, dim=128, edge_num=3000, pre_train=None):
         """
         Randomly init the edge embeddings.
@@ -51,7 +49,7 @@ class EdgeEmbedding(nn.Module):
             edge_num: the maximum type of edges
             pre_train: the pre_trained embeddings
         """
-        super(EdgeEmbedding,self).__init__()
+        super(EdgeEmbedding, self).__init__()
         self._dim = dim
         self._edge_num = edge_num
         if pre_train is not None:
@@ -90,7 +88,6 @@ class ShiftSoftplus(Softplus):
     Shiftsoft plus activation function:
         1/beta * (log(1 + exp**(beta * x)) - log(shift))
     """
-
     def __init__(self, beta=1, shift=2, threshold=20):
         super().__init__(beta, threshold)
         self.shift = shift
@@ -108,9 +105,8 @@ class RBFLayer(nn.Module):
         gamma = 10
         0 <= mu_k <= 30 for k=1~300
     """
-
     def __init__(self, low=0, high=30, gap=0.1, dim=1, device='cpu'):
-        super(RBFLayer,self).__init__()
+        super(RBFLayer, self).__init__()
         self._low = low
         self._high = high
         self._gap = gap
@@ -142,7 +138,6 @@ class CFConv(nn.Module):
     One CFConv contains one rbf layer and three linear layer
         (two of them have activation funct).
     """
-
     def __init__(self, rbf_dim, dim=64, act="sp"):
         """
         Args:
@@ -150,7 +145,7 @@ class CFConv(nn.Module):
             dim: the dimension of linear layers
             act: activation function (default shifted softplus)
         """
-        super(CFConv,self).__init__()
+        super(CFConv, self).__init__()
         self._rbf_dim = rbf_dim
         self._dim = dim
 
@@ -180,9 +175,8 @@ class Interaction(nn.Module):
     """
     The interaction layer in the SchNet model.
     """
-
     def __init__(self, rbf_dim, dim):
-        super(Interaction,self).__init__()
+        super(Interaction, self).__init__()
         self._node_dim = dim
         self.activation = nn.Softplus(beta=0.5, threshold=14)
         self.node_layer1 = nn.Linear(dim, dim, bias=False)
@@ -206,7 +200,6 @@ class VEConv(nn.Module):
     The Vertex-Edge convolution layer in MGCN which take edge & vertex features
     in consideratoin at the same time.
     """
-
     def __init__(self, rbf_dim, dim=64, update_edge=True):
         """
         Args:
@@ -260,7 +253,6 @@ class MultiLevelInteraction(nn.Module):
     """
     The multilevel interaction in the MGCN model.
     """
-
     def __init__(self, rbf_dim, dim):
         super().__init__()
 

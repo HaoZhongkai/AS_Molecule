@@ -1,7 +1,5 @@
-#!/usr/bin/env python  
+#!/usr/bin/env python
 #-*- coding:utf-8 _*-
-
-
 
 import torch as th
 import numpy as np
@@ -11,16 +9,16 @@ from torch.nn import Softplus
 import random
 import dgl
 from torch.distributions.categorical import Categorical
-
 '''Message Masking Schnet but mask message when training and testing
 '''
+
+
 #cannot first write device in model
 class AtomEmbedding(nn.Module):
     """
     Convert the atom(node) list to atom embeddings.
     The atom with the same element share the same initial embeddding.
     """
-
     def __init__(self, dim=128, type_num=100, pre_train=None):
         """
         Randomly init the element embeddings.
@@ -29,7 +27,7 @@ class AtomEmbedding(nn.Module):
             type_num: the largest atomic number of atoms in the dataset
             pre_train: the pre_trained embeddings
         """
-        super(AtomEmbedding,self).__init__()
+        super(AtomEmbedding, self).__init__()
         self._dim = dim
         self._type_num = type_num
         if pre_train is not None:
@@ -37,7 +35,6 @@ class AtomEmbedding(nn.Module):
                                                           padding_idx=0)
         else:
             self.embedding = nn.Embedding(type_num, dim, padding_idx=0)
-
 
     def forward(self, g, p_name="node"):
         """Input type is dgl graph"""
@@ -51,7 +48,6 @@ class EdgeEmbedding(nn.Module):
     Convert the edge to embedding.
     The edge links same pair of atoms share the same initial embedding.
     """
-
     def __init__(self, dim=128, edge_num=3000, pre_train=None):
         """
         Randomly init the edge embeddings.
@@ -60,7 +56,7 @@ class EdgeEmbedding(nn.Module):
             edge_num: the maximum type of edges
             pre_train: the pre_trained embeddings
         """
-        super(EdgeEmbedding,self).__init__()
+        super(EdgeEmbedding, self).__init__()
         self._dim = dim
         self._edge_num = edge_num
         if pre_train is not None:
@@ -99,7 +95,6 @@ class ShiftSoftplus(Softplus):
     Shiftsoft plus activation function:
         1/beta * (log(1 + exp**(beta * x)) - log(shift))
     """
-
     def __init__(self, beta=1, shift=2, threshold=20):
         super().__init__(beta, threshold)
         self.shift = shift
@@ -117,9 +112,8 @@ class RBFLayer(nn.Module):
         gamma = 10
         0 <= mu_k <= 30 for k=1~300
     """
-
     def __init__(self, low=0, high=30, gap=0.1, dim=1):
-        super(RBFLayer,self).__init__()
+        super(RBFLayer, self).__init__()
         self._low = low
         self._high = high
         self._gap = gap
@@ -144,14 +138,16 @@ class RBFLayer(nn.Module):
         g.apply_edges(self.dis2rbf)
         return g.edata["rbf"]
 
+
 '''Message Masking on this module'''
+
+
 class CFConv(nn.Module):
     """
     The continuous-filter convolution layer in SchNet.
     One CFConv contains one rbf layer and three linear layer
         (two of them have activation funct).
     """
-
     def __init__(self, rbf_dim, dim=64, act="sp", mask_rate=0.2):
         """
         Args:
@@ -159,7 +155,7 @@ class CFConv(nn.Module):
             dim: the dimension of linear layers
             act: activation function (default shifted softplus)
         """
-        super(CFConv,self).__init__()
+        super(CFConv, self).__init__()
         self._rbf_dim = rbf_dim
         self._dim = dim
         self._rbf_threshold = 1e-2
@@ -177,8 +173,9 @@ class CFConv(nn.Module):
         rbf = edges.data["rbf"]
 
         valid_msg_id = th.nonzero(rbf.max(dim=1)[0] > 1e-2).squeeze()
-        msk_msg_id = valid_msg_id[th.randint(0,valid_msg_id.shape[0],[int(self.mask_rate*valid_msg_id.shape[0])])]
-
+        msk_msg_id = valid_msg_id[th.randint(
+            0, valid_msg_id.shape[0],
+            [int(self.mask_rate * valid_msg_id.shape[0])])]
 
         h = self.linear_layer1(rbf)
         h = self.activation(h)
@@ -205,8 +202,6 @@ class CFConv(nn.Module):
     #     h[msk_msg_id] = 0
     #     return {"h": h}
 
-
-
     def forward(self, g):
         g.apply_edges(self.update_edge)
         g.update_all(message_func=fn.u_mul_e('new_node', 'h', 'neighbor_info'),
@@ -225,9 +220,8 @@ class MM_Interaction(nn.Module):
     """
     The interaction layer in the SchNet model.
     """
-
     def __init__(self, rbf_dim, dim, mask_rate=0.2):
-        super(MM_Interaction,self).__init__()
+        super(MM_Interaction, self).__init__()
         self._node_dim = dim
 
         self.mask_rate = mask_rate
@@ -247,8 +241,6 @@ class MM_Interaction(nn.Module):
         g.ndata["node"] = g.ndata["node"] + new_node
         return g.ndata["node"]
 
-
-
     # def message_masking_inference(self,g):
     #     g.ndata["new_node"] = self.node_layer1(g.ndata["node"])
     #     cf_node = self.cfconv.message_masking_inference(g)
@@ -259,8 +251,6 @@ class MM_Interaction(nn.Module):
     #     return g.ndata["node"]
 
 
-
-
 class Msk_SchNetModel(nn.Module):
     """
     SchNet Model from:
@@ -268,7 +258,6 @@ class Msk_SchNetModel(nn.Module):
         SchNet: A continuous-filter convolutional neural network
         for modeling quantum interactions. (NIPS'2017)
     """
-
     def __init__(self,
                  dim=64,
                  cutoff=5.0,
@@ -278,8 +267,7 @@ class Msk_SchNetModel(nn.Module):
                  norm=False,
                  atom_ref=None,
                  pre_train=None,
-                 mask_rate=0.2
-                 ):
+                 mask_rate=0.2):
         """
         Args:
             dim: dimension of features
@@ -291,7 +279,7 @@ class Msk_SchNetModel(nn.Module):
                       or set to None with random initialization
             norm: normalization
         """
-        super(Msk_SchNetModel,self).__init__()
+        super(Msk_SchNetModel, self).__init__()
         self.name = "SchNet"
         self._dim = dim
         self.cutoff = cutoff
@@ -309,8 +297,10 @@ class Msk_SchNetModel(nn.Module):
         else:
             self.embedding_layer = AtomEmbedding(pre_train=pre_train)
         self.rbf_layer = RBFLayer(0, cutoff, width)
-        self.conv_layers = nn.ModuleList(
-            [MM_Interaction(self.rbf_layer._fan_out, dim,self.mask_rate) for i in range(n_conv)])
+        self.conv_layers = nn.ModuleList([
+            MM_Interaction(self.rbf_layer._fan_out, dim, self.mask_rate)
+            for i in range(n_conv)
+        ])
 
         self.atom_dense_layer1 = nn.Linear(dim, 64)
         self.atom_dense_layer2 = nn.Linear(64, output_dim)
@@ -319,11 +309,10 @@ class Msk_SchNetModel(nn.Module):
         self.mean_per_atom = mean.clone().detach()
         self.std_per_atom = std.clone().detach()
 
-
     def forward(self, g):
         # g_list list of molecules
 
-        g.edata['distance'] = g.edata['distance'].reshape(-1,1)
+        g.edata['distance'] = g.edata['distance'].reshape(-1, 1)
 
         self.embedding_layer(g)
         if self.atom_ref is not None:
@@ -345,7 +334,6 @@ class Msk_SchNetModel(nn.Module):
                 "res"] * self.std_per_atom + self.mean_per_atom
         res = dgl.mean_nodes(g, "res")
         return res
-
 
     # def inference(self,g):
     #     # g_list list of molecules

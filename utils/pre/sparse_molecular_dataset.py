@@ -12,16 +12,21 @@ from datetime import datetime
 
 
 class SparseMolecularDataset():
-
     def load(self, filename, subset=1):
 
         with open(filename, 'rb') as f:
             self.__dict__.update(pickle.load(f))
 
-        self.train_idx = np.random.choice(self.train_idx, int(len(self.train_idx) * subset), replace=False)
-        self.validation_idx = np.random.choice(self.validation_idx, int(len(self.validation_idx) * subset),
-                                               replace=False)
-        self.test_idx = np.random.choice(self.test_idx, int(len(self.test_idx) * subset), replace=False)
+        self.train_idx = np.random.choice(self.train_idx,
+                                          int(len(self.train_idx) * subset),
+                                          replace=False)
+        self.validation_idx = np.random.choice(
+            self.validation_idx,
+            int(len(self.validation_idx) * subset),
+            replace=False)
+        self.test_idx = np.random.choice(self.test_idx,
+                                         int(len(self.test_idx) * subset),
+                                         replace=False)
 
         self.train_count = len(self.train_idx)
         self.validation_count = len(self.validation_idx)
@@ -33,21 +38,31 @@ class SparseMolecularDataset():
         with open(filename, 'wb') as f:
             pickle.dump(self.__dict__, f)
 
-    def generate(self, filename, add_h=False, filters=lambda x: True, size=None, validation=0.1, test=0.1):
+    def generate(self,
+                 filename,
+                 add_h=False,
+                 filters=lambda x: True,
+                 size=None,
+                 validation=0.1,
+                 test=0.1):
         self.log('Extracting {}..'.format(filename))
 
         if filename.endswith('.sdf'):
-            self.data = list(filter(lambda x: x is not None, Chem.SDMolSupplier(filename)))
+            self.data = list(
+                filter(lambda x: x is not None, Chem.SDMolSupplier(filename)))
         elif filename.endswith('.smi'):
-            self.data = [Chem.MolFromSmiles(line) for line in open(filename, 'r').readlines()]
+            self.data = [
+                Chem.MolFromSmiles(line)
+                for line in open(filename, 'r').readlines()
+            ]
 
         self.data = list(map(Chem.AddHs, self.data)) if add_h else self.data
         self.data = list(filter(filters, self.data))
         self.data = self.data[:size]
 
-        self.log('Extracted {} out of {} molecules {}adding Hydrogen!'.format(len(self.data),
-                                                                              len(Chem.SDMolSupplier(filename)),
-                                                                              '' if add_h else 'not '))
+        self.log('Extracted {} out of {} molecules {}adding Hydrogen!'.format(
+            len(self.data), len(Chem.SDMolSupplier(filename)),
+            '' if add_h else 'not '))
 
         self._generate_encoders_decoders()
         self._generate_AX()
@@ -96,30 +111,40 @@ class SparseMolecularDataset():
 
     def _generate_encoders_decoders(self):
         self.log('Creating atoms encoder and decoder..')
-        atom_labels = sorted(set([atom.GetAtomicNum() for mol in self.data for atom in mol.GetAtoms()] + [0]))
+        atom_labels = sorted(
+            set([
+                atom.GetAtomicNum() for mol in self.data
+                for atom in mol.GetAtoms()
+            ] + [0]))
         self.atom_encoder_m = {l: i for i, l in enumerate(atom_labels)}
         self.atom_decoder_m = {i: l for i, l in enumerate(atom_labels)}
         self.atom_num_types = len(atom_labels)
-        self.log('Created atoms encoder and decoder with {} atom types and 1 PAD symbol!'.format(
-            self.atom_num_types - 1))
+        self.log(
+            'Created atoms encoder and decoder with {} atom types and 1 PAD symbol!'
+            .format(self.atom_num_types - 1))
 
         self.log('Creating bonds encoder and decoder..')
-        bond_labels = [Chem.rdchem.BondType.ZERO] + list(sorted(set(bond.GetBondType()
-                                                                    for mol in self.data
-                                                                    for bond in mol.GetBonds())))
+        bond_labels = [Chem.rdchem.BondType.ZERO] + list(
+            sorted(
+                set(bond.GetBondType() for mol in self.data
+                    for bond in mol.GetBonds())))
 
         self.bond_encoder_m = {l: i for i, l in enumerate(bond_labels)}
         self.bond_decoder_m = {i: l for i, l in enumerate(bond_labels)}
         self.bond_num_types = len(bond_labels)
-        self.log('Created bonds encoder and decoder with {} bond types and 1 PAD symbol!'.format(
-            self.bond_num_types - 1))
+        self.log(
+            'Created bonds encoder and decoder with {} bond types and 1 PAD symbol!'
+            .format(self.bond_num_types - 1))
 
         self.log('Creating SMILES encoder and decoder..')
-        smiles_labels = ['E'] + list(set(c for mol in self.data for c in Chem.MolToSmiles(mol)))
+        smiles_labels = ['E'] + list(
+            set(c for mol in self.data for c in Chem.MolToSmiles(mol)))
         self.smiles_encoder_m = {l: i for i, l in enumerate(smiles_labels)}
         self.smiles_decoder_m = {i: l for i, l in enumerate(smiles_labels)}
         self.smiles_num_types = len(smiles_labels)
-        self.log('Created SMILES encoder and decoder with {} types and 1 PAD symbol!'.format(self.smiles_num_types - 1))
+        self.log(
+            'Created SMILES encoder and decoder with {} types and 1 PAD symbol!'
+            .format(self.smiles_num_types - 1))
 
     def _generate_AX(self):
         self.log('Creating features and adjacency matrices..')
@@ -159,8 +184,9 @@ class SparseMolecularDataset():
             pr.update(i + 1)
 
         self.log(date=False)
-        self.log('Created {} features and adjacency matrices  out of {} molecules!'.format(len(data),
-                                                                                           len(self.data)))
+        self.log(
+            'Created {} features and adjacency matrices  out of {} molecules!'.
+            format(len(data), len(self.data)))
 
         self.data = data
         self.smiles = smiles
@@ -175,12 +201,16 @@ class SparseMolecularDataset():
 
     def _genA(self, mol, connected=True, max_length=None):
 
-        max_length = max_length if max_length is not None else mol.GetNumAtoms()
+        max_length = max_length if max_length is not None else mol.GetNumAtoms(
+        )
 
         A = np.zeros(shape=(max_length, max_length), dtype=np.int32)
 
-        begin, end = [b.GetBeginAtomIdx() for b in mol.GetBonds()], [b.GetEndAtomIdx() for b in mol.GetBonds()]
-        bond_type = [self.bond_encoder_m[b.GetBondType()] for b in mol.GetBonds()]
+        begin, end = [b.GetBeginAtomIdx() for b in mol.GetBonds()
+                      ], [b.GetEndAtomIdx() for b in mol.GetBonds()]
+        bond_type = [
+            self.bond_encoder_m[b.GetBondType()] for b in mol.GetBonds()
+        ]
 
         A[begin, end] = bond_type
         A[end, begin] = bond_type
@@ -191,35 +221,47 @@ class SparseMolecularDataset():
 
     def _genX(self, mol, max_length=None):
 
-        max_length = max_length if max_length is not None else mol.GetNumAtoms()
+        max_length = max_length if max_length is not None else mol.GetNumAtoms(
+        )
 
-        return np.array([self.atom_encoder_m[atom.GetAtomicNum()] for atom in mol.GetAtoms()] + [0] * (
-                    max_length - mol.GetNumAtoms()), dtype=np.int32)
+        return np.array([
+            self.atom_encoder_m[atom.GetAtomicNum()]
+            for atom in mol.GetAtoms()
+        ] + [0] * (max_length - mol.GetNumAtoms()),
+                        dtype=np.int32)
 
     def _genS(self, mol, max_length=None):
 
-        max_length = max_length if max_length is not None else len(Chem.MolToSmiles(mol))
+        max_length = max_length if max_length is not None else len(
+            Chem.MolToSmiles(mol))
 
-        return np.array([self.smiles_encoder_m[c] for c in Chem.MolToSmiles(mol)] + [self.smiles_encoder_m['E']] * (
-                    max_length - len(Chem.MolToSmiles(mol))), dtype=np.int32)
+        return np.array(
+            [self.smiles_encoder_m[c]
+             for c in Chem.MolToSmiles(mol)] + [self.smiles_encoder_m['E']] *
+            (max_length - len(Chem.MolToSmiles(mol))),
+            dtype=np.int32)
 
     def _genF(self, mol, max_length=None):
 
-        max_length = max_length if max_length is not None else mol.GetNumAtoms()
+        max_length = max_length if max_length is not None else mol.GetNumAtoms(
+        )
 
-        features = np.array([[*[a.GetDegree() == i for i in range(5)],
-                              *[a.GetExplicitValence() == i for i in range(9)],
-                              *[int(a.GetHybridization()) == i for i in range(1, 7)],
-                              *[a.GetImplicitValence() == i for i in range(9)],
-                              a.GetIsAromatic(),
-                              a.GetNoImplicit(),
-                              *[a.GetNumExplicitHs() == i for i in range(5)],
-                              *[a.GetNumImplicitHs() == i for i in range(5)],
-                              *[a.GetNumRadicalElectrons() == i for i in range(5)],
-                              a.IsInRing(),
-                              *[a.IsInRingSize(i) for i in range(2, 9)]] for a in mol.GetAtoms()], dtype=np.int32)
+        features = np.array([[
+            *[a.GetDegree() == i for i in range(5)],
+            *[a.GetExplicitValence() == i for i in range(9)],
+            *[int(a.GetHybridization()) == i for i in range(1, 7)],
+            *[a.GetImplicitValence() == i for i in range(9)],
+            a.GetIsAromatic(),
+            a.GetNoImplicit(), *[a.GetNumExplicitHs() == i for i in range(5)],
+            *[a.GetNumImplicitHs() == i for i in range(5)],
+            *[a.GetNumRadicalElectrons() == i for i in range(5)],
+            a.IsInRing(), *[a.IsInRingSize(i) for i in range(2, 9)]
+        ] for a in mol.GetAtoms()],
+                            dtype=np.int32)
 
-        return np.vstack((features, np.zeros((max_length - features.shape[0], features.shape[1]))))
+        return np.vstack(
+            (features,
+             np.zeros((max_length - features.shape[0], features.shape[1]))))
 
     def matrices2mol(self, node_labels, edge_labels, strict=False):
         mol = Chem.RWMol()
@@ -229,7 +271,8 @@ class SparseMolecularDataset():
 
         for start, end in zip(*np.nonzero(edge_labels)):
             if start > end:
-                mol.AddBond(int(start), int(end), self.bond_decoder_m[edge_labels[start, end]])
+                mol.AddBond(int(start), int(end),
+                            self.bond_decoder_m[edge_labels[start, end]])
 
         if strict:
             try:
@@ -240,7 +283,8 @@ class SparseMolecularDataset():
         return mol
 
     def seq2mol(self, seq, strict=False):
-        mol = Chem.MolFromSmiles(''.join([self.smiles_decoder_m[e] for e in seq if e != 0]))
+        mol = Chem.MolFromSmiles(''.join(
+            [self.smiles_decoder_m[e] for e in seq if e != 0]))
 
         if strict:
             try:
@@ -271,8 +315,9 @@ class SparseMolecularDataset():
         self.validation_count = validation
         self.test_count = test
 
-        self.log('Created train ({} items), validation ({} items) and test ({} items) sets!'.format(
-            train, validation, test))
+        self.log(
+            'Created train ({} items), validation ({} items) and test ({} items) sets!'
+            .format(train, validation, test))
 
     def _next_batch(self, counter, count, idx, batch_size):
         if batch_size is not None:
@@ -280,41 +325,54 @@ class SparseMolecularDataset():
                 counter = 0
                 np.random.shuffle(idx)
 
-            output = [obj[idx[counter:counter + batch_size]]
-                      for obj in (self.data, self.smiles, self.data_S, self.data_A, self.data_X,
-                                  self.data_D, self.data_F, self.data_Le, self.data_Lv)]
+            output = [
+                obj[idx[counter:counter + batch_size]]
+                for obj in (self.data, self.smiles, self.data_S, self.data_A,
+                            self.data_X, self.data_D, self.data_F,
+                            self.data_Le, self.data_Lv)
+            ]
 
             counter += batch_size
         else:
-            output = [obj[idx] for obj in (self.data, self.smiles, self.data_S, self.data_A, self.data_X,
-                                           self.data_D, self.data_F, self.data_Le, self.data_Lv)]
+            output = [
+                obj[idx] for obj in (self.data, self.smiles, self.data_S,
+                                     self.data_A, self.data_X, self.data_D,
+                                     self.data_F, self.data_Le, self.data_Lv)
+            ]
 
         return [counter] + output
 
     def next_train_batch(self, batch_size=None):
-        out = self._next_batch(counter=self.train_counter, count=self.train_count,
-                               idx=self.train_idx, batch_size=batch_size)
+        out = self._next_batch(counter=self.train_counter,
+                               count=self.train_count,
+                               idx=self.train_idx,
+                               batch_size=batch_size)
         self.train_counter = out[0]
 
         return out[1:]
 
     def next_validation_batch(self, batch_size=None):
-        out = self._next_batch(counter=self.validation_counter, count=self.validation_count,
-                               idx=self.validation_idx, batch_size=batch_size)
+        out = self._next_batch(counter=self.validation_counter,
+                               count=self.validation_count,
+                               idx=self.validation_idx,
+                               batch_size=batch_size)
         self.validation_counter = out[0]
 
         return out[1:]
 
     def next_test_batch(self, batch_size=None):
-        out = self._next_batch(counter=self.test_counter, count=self.test_count,
-                               idx=self.test_idx, batch_size=batch_size)
+        out = self._next_batch(counter=self.test_counter,
+                               count=self.test_count,
+                               idx=self.test_idx,
+                               batch_size=batch_size)
         self.test_counter = out[0]
 
         return out[1:]
 
     @staticmethod
     def log(msg='', date=True):
-        print(str(datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + ' ' + str(msg) if date else str(msg))
+        print(str(datetime.now().strftime('%Y-%m-%d %H:%M:%S')) + ' ' +
+              str(msg) if date else str(msg))
 
     def __len__(self):
         return self.__len

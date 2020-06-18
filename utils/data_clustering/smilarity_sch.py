@@ -1,4 +1,4 @@
-#!/usr/bin/env python  
+#!/usr/bin/env python
 #-*- coding:utf-8 _*-
 
 import pickle
@@ -23,57 +23,66 @@ import random
 from pre_training.sch_embeddings import SchEmbedding
 config = Global_Config()
 args = make_args()
-
-
 '''观察由随机的(或者预训练的)schnet输出的graph embedding的pca'''
 n_bit = 512
+
+
 def smi2vec(smi):
     mol = Chem.MolFromSmiles(smi)
-    bit_vec = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, 4, nBits=n_bit)
+    bit_vec = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol,
+                                                             4,
+                                                             nBits=n_bit)
     vec = [bit_vec[i] for i in range(n_bit)]
 
     return vec
 
-def get_preds(args,model,dataset,device):
+
+def get_preds(args, model, dataset, device):
     time0 = time.time()
-    dataloader = DataLoader(dataset=dataset, batch_size=args.batchsize*5, collate_fn=batcher,shuffle=False, num_workers=args.workers)
+    dataloader = DataLoader(dataset=dataset,
+                            batch_size=args.batchsize * 5,
+                            collate_fn=batcher,
+                            shuffle=False,
+                            num_workers=args.workers)
     model.to(device)
-    model.set_mean_std(dataset.mean,dataset.std)
+    model.set_mean_std(dataset.mean, dataset.std)
     embeddings = []
     with torch.no_grad():
-        for idx,(mols,_) in enumerate(dataloader):
+        for idx, (mols, _) in enumerate(dataloader):
             g = dgl.batch([mol.ful_g for mol in mols])
             g.to(device)
             embedding = model.embed_g(g)
             embeddings.append(embedding)
 
-    embeddings = torch.cat(embeddings,dim=0)
-    print('inference {}'.format(time.time()-time0))
+    embeddings = torch.cat(embeddings, dim=0)
+    print('inference {}'.format(time.time() - time0))
 
     return embeddings
 
 
 qm9_data_path = config.train_pkl['qm9']
-mols = pickle.load(open(qm9_data_path,'rb'))
+mols = pickle.load(open(qm9_data_path, 'rb'))
 # smis = [mol.smi for mol in mols]
 
-model = SchEmbedding(dim=48, n_conv=4, cutoff=5.0, width=0.5, norm=True, output_dim=1)
+model = SchEmbedding(dim=48,
+                     n_conv=4,
+                     cutoff=5.0,
+                     width=0.5,
+                     norm=True,
+                     output_dim=1)
 # model = WSchnet_N(dim=96, n_conv=4, cutoff=30.0, width=0.1, norm=True, output_dim=1)
 
-dataset = MoleDataset(mols=mols,prop_name='homo')
+dataset = MoleDataset(mols=mols, prop_name='homo')
 
-embeddings = get_preds(args,model,dataset,torch.device(args.device))
+embeddings = get_preds(args, model, dataset, torch.device(args.device))
 
 embeddings = embeddings.cpu()
 
-center_ids = k_medoids_pp(embeddings,5000,15,show_stats=True)
+center_ids = k_medoids_pp(embeddings, 5000, 15, show_stats=True)
 # center_ids = random.sample(range(embeddings.shape[0]),5000)
-
 
 embeddings = embeddings.numpy()
 # fingerprints = [smi2vec(smi) for smi in smis]
-
-
 
 n_components = 2
 
@@ -84,17 +93,17 @@ pca.fit(embeddings)
 
 qm9_pca = pca.transform(embeddings)
 
-
-
-
-print('time {}'.format(time.time()-time0))
-plt.scatter(qm9_pca[:,0],qm9_pca[:,1],marker='.',color='b')
-plt.scatter(qm9_pca[center_ids,0],qm9_pca[center_ids,1],marker='.',color='g')
+print('time {}'.format(time.time() - time0))
+plt.scatter(qm9_pca[:, 0], qm9_pca[:, 1], marker='.', color='b')
+plt.scatter(qm9_pca[center_ids, 0],
+            qm9_pca[center_ids, 1],
+            marker='.',
+            color='g')
 plt.savefig('qm9_pca_sch.png')
 
 # qm9_pca_t = torch.Tensor(qm9_pca)
 
 # save_path = config.DATASET_PATH['qm9']+'/qm9_fingerprint_'+str(n_components)+'.pkl'
-save_path = config.DATASET_PATH['qm9']+'/sch_ebd.pkl'
+save_path = config.DATASET_PATH['qm9'] + '/sch_ebd.pkl'
 
-pickle.dump(qm9_pca,open(save_path,'wb'))
+pickle.dump(qm9_pca, open(save_path, 'wb'))

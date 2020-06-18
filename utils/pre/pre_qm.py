@@ -4,14 +4,16 @@ from utils.funcs import MoleDataset
 
 config = Config()
 
-
 if __name__ == '__main__':
-    paths = {'train': config.DATASET_PATH['qm9'] + '/data_elem_train.pkl',
-            'test': config.DATASET_PATH['qm9'] + '/data_elem_test.pkl',
-            'valid': config.DATASET_PATH['qm9'] + '/data_elem_valid.pkl'}
-    path_save = {'train':config.DATASET_PATH['qm9']+'/qm9_mol_train.pkl',
-                  'valid': config.DATASET_PATH['qm9'] + '/qm9_mol_valid.pkl',
-                 'test': config.DATASET_PATH['qm9'] + '/qm9_mol_test.pkl',
+    paths = {
+        'train': config.DATASET_PATH['qm9'] + '/data_elem_train.pkl',
+        'test': config.DATASET_PATH['qm9'] + '/data_elem_test.pkl',
+        'valid': config.DATASET_PATH['qm9'] + '/data_elem_valid.pkl'
+    }
+    path_save = {
+        'train': config.DATASET_PATH['qm9'] + '/qm9_mol_train.pkl',
+        'valid': config.DATASET_PATH['qm9'] + '/qm9_mol_valid.pkl',
+        'test': config.DATASET_PATH['qm9'] + '/qm9_mol_test.pkl',
     }
 
     dataset_train = MoleDataset(paths['train'])
@@ -28,4 +30,3 @@ if __name__ == '__main__':
     dataset_val.build()
     dataset_val.save_mol(path_save['valid'])
     print('ok')
-
