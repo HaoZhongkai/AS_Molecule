@@ -6,6 +6,7 @@ import torch.nn as nn
 from base_model.layers import AtomEmbedding, Interaction, ShiftSoftplus, RBFLayer
 from torch.nn.modules import PairwiseDistance
 
+
 class SchNetModel(nn.Module):
     """
     SchNet Model from:
@@ -13,7 +14,6 @@ class SchNetModel(nn.Module):
         SchNet: A continuous-filter convolutional neural network
         for modeling quantum interactions. (NIPS'2017)
     """
-
     def __init__(self,
                  dim=64,
                  cutoff=5.0,
@@ -36,7 +36,7 @@ class SchNetModel(nn.Module):
             norm: normalization
             device: cpu or gpu with idx
         """
-        super(SchNetModel,self).__init__()
+        super(SchNetModel, self).__init__()
         self.name = "SchNet"
         self._dim = dim
         self.cutoff = cutoff
@@ -52,7 +52,8 @@ class SchNetModel(nn.Module):
         if pre_train is None:
             self.embedding_layer = AtomEmbedding(dim, device=self.device)
         else:
-            self.embedding_layer = AtomEmbedding(pre_train=pre_train, device=self.device)
+            self.embedding_layer = AtomEmbedding(pre_train=pre_train,
+                                                 device=self.device)
         self.rbf_layer = RBFLayer(0, cutoff, width, device=self.device)
         self.conv_layers = nn.ModuleList(
             [Interaction(self.rbf_layer._fan_out, dim) for i in range(n_conv)])
@@ -64,12 +65,11 @@ class SchNetModel(nn.Module):
         self.mean_per_atom = th.tensor(mean, device=self.device)
         self.std_per_atom = th.tensor(std, device=self.device)
 
-
     def forward(self, mol_list):
         # g_list list of molecules
 
         g = dgl.batch([mol.ful_g for mol in mol_list])
-        g.edata['distance'] = g.edata['distance'].reshape(-1,1)
+        g.edata['distance'] = g.edata['distance'].reshape(-1, 1)
         g.to(self.device)
 
         self.embedding_layer(g)

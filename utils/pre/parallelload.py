@@ -7,16 +7,27 @@ import sys
 from utils.funcs import MoleDataset2
 from config import Global_Config as Config
 config = Config()
+
+
 def get_mol(data):
     pos, atoms, edges, smi, prop, dists = data
-    return Molecule(pos, atoms, edges, smi, prop, distance=dists, loc=False, glob=True)
+    return Molecule(pos,
+                    atoms,
+                    edges,
+                    smi,
+                    prop,
+                    distance=dists,
+                    loc=False,
+                    glob=True)
+
 
 class M():
     L = 1
-    def __init__(self,num):
+
+    def __init__(self, num):
         self.num = num
         self.ar = np.array([5])
-        self.th = torch.Tensor([num,num])
+        self.th = torch.Tensor([num, num])
         self.g = dgl.DGLGraph()
         self.build()
 
@@ -24,10 +35,8 @@ class M():
         self.g.add_nodes(self.num)
 
 
-
 def get_M(num):
     return M(num)
-
 
 
 if __name__ == '__main__':
@@ -40,9 +49,8 @@ if __name__ == '__main__':
     #     cnt+=1
     # manager = Manager()
 
-
     # path = config.PATH+'/datasets/OPV/data_elem_train.pkl'
-    path = config.PATH+'/datasets/OPV/data_elem_test.pkl'
+    path = config.PATH + '/datasets/OPV/data_elem_test.pkl'
 
     # save_path = [config.PATH+'/datasets/OPV/opv_mol_train1.pkl',
     #              config.PATH+'/datasets/OPV/opv_mol_train2.pkl',
@@ -51,13 +59,9 @@ if __name__ == '__main__':
     #              config.PATH+'/datasets/OPV/opv_mol_train5.pkl',
     #
     #              ]
-    save_path = config.PATH+'/datasets/OPV/opv_mol_test.pkl'
+    save_path = config.PATH + '/datasets/OPV/opv_mol_test.pkl'
 
-    dataset = MoleDataset2(path,'homo',False,True)
+    dataset = MoleDataset2(path, 'homo', False, True)
     dataset.build()
     dataset.save_mol(save_path)
     print('ok')
-
-
-
-

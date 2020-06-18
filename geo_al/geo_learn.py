@@ -13,29 +13,40 @@ from tensorboardX import SummaryWriter
 # K_center AL
 #load the whole dataset
 
-def get_preds(args,model,dataset,device):
+
+def get_preds(args, model, dataset, device):
     time0 = time.time()
-    dataloader = DataLoader(dataset=dataset, batch_size=args.batchsize, collate_fn=batcher,shuffle=False, num_workers=args.workers)
+    dataloader = DataLoader(dataset=dataset,
+                            batch_size=args.batchsize,
+                            collate_fn=batcher,
+                            shuffle=False,
+                            num_workers=args.workers)
     model.to(device)
-    model.set_mean_std(dataset.mean,dataset.std)
+    model.set_mean_std(dataset.mean, dataset.std)
     embeddings = []
     with torch.no_grad():
-        for idx,(mols,_) in enumerate(dataloader):
+        for idx, (mols, _) in enumerate(dataloader):
             g = dgl.batch([mol.ful_g for mol in mols])
             g.to(device)
             embedding = model.inference(g)
             embeddings.append(embedding)
 
-    embeddings = torch.cat(embeddings,dim=0)
-    print('inference {}'.format(time.time()-time0))
+    embeddings = torch.cat(embeddings, dim=0)
+    print('inference {}'.format(time.time() - time0))
 
     return embeddings
 
 
-def finetune(args,train_dataset,model,optimizer,writer,info,device,iter):
-    train_loader = DataLoader(dataset=train_dataset, batch_size=args.batchsize, collate_fn=batcher,shuffle=args.shuffle, num_workers=args.workers)
+def finetune(args, train_dataset, model, optimizer, writer, info, device,
+             iter):
+    train_loader = DataLoader(dataset=train_dataset,
+                              batch_size=args.batchsize,
+                              collate_fn=batcher,
+                              shuffle=args.shuffle,
+                              num_workers=args.workers)
     print('start finetuning with label numbers {}'.format(len(train_dataset)))
-    print('dataset mean {} std {}'.format(train_dataset.mean.item(), train_dataset.std.item()))
+    print('dataset mean {} std {}'.format(train_dataset.mean.item(),
+                                          train_dataset.std.item()))
     # if model.name in ["MGCN", "SchNet"]:
     model.set_mean_std(train_dataset.mean, train_dataset.std)
     model.to(device)
@@ -44,7 +55,7 @@ def finetune(args,train_dataset,model,optimizer,writer,info,device,iter):
     MAE_fn = nn.L1Loss()
     mse_meter = meter.AverageValueMeter()
     mae_meter = meter.AverageValueMeter()
-    total_epochs = iter*args.k_center_ft_epochs
+    total_epochs = iter * args.k_center_ft_epochs
     # info = {'train_loss': [],
     #         'train_mae': [],
     #         'total_epochs':[]}
@@ -56,7 +67,7 @@ def finetune(args,train_dataset,model,optimizer,writer,info,device,iter):
             label = label.to(device)
             g = dgl.batch([mol.ful_g for mol in mols])
             g.to(device)
-            res = model(g)[0].squeeze()   # use SchEmbedding model
+            res = model(g)[0].squeeze()  # use SchEmbedding model
             loss = loss_fn(res, label)
             mae = MAE_fn(res, label)
 
@@ -66,31 +77,40 @@ def finetune(args,train_dataset,model,optimizer,writer,info,device,iter):
 
             mae_meter.add(mae.detach().item())
             mse_meter.add(loss.detach().item())
-        print("Epoch {:2d}/{:2d}, training: loss: {:.7f}, mae: {:.7f}".format(epoch,total_epochs+epoch, mse_meter.value()[0],mae_meter.value()[0]))
+        print("Epoch {:2d}/{:2d}, training: loss: {:.7f}, mae: {:.7f}".format(
+            epoch, total_epochs + epoch,
+            mse_meter.value()[0],
+            mae_meter.value()[0]))
 
         info['train_loss'].append(mse_meter.value()[0])
         info['train_mae'].append(mae_meter.value()[0])
-        info['total_epochs'].append(total_epochs+epoch)
+        info['total_epochs'].append(total_epochs + epoch)
         if args.use_tb:
-            writer.add_scalar('train_loss', mse_meter.value()[0],total_epochs+epoch)
-            writer.add_scalar('train_mae', mae_meter.value()[0],total_epochs+epoch)
-
+            writer.add_scalar('train_loss',
+                              mse_meter.value()[0], total_epochs + epoch)
+            writer.add_scalar('train_mae',
+                              mae_meter.value()[0], total_epochs + epoch)
 
         # if args.use_tb:
         #     writer.add_scalar('testing_loss',loss_test,epoch)
         #     writer.add_scalar('testing_mae',mae_test,epoch)
     return info
 
-def test(args, test_set,model,device):
+
+def test(args, test_set, model, device):
     loss_fn = nn.MSELoss()
     MAE_fn = nn.L1Loss()
     mse_meter = meter.AverageValueMeter()
     mae_meter = meter.AverageValueMeter()
     model.eval()
     model.to(device)
-    test_loader = DataLoader(dataset=test_set,batch_size=args.batchsize,collate_fn=batcher,shuffle=args.shuffle,num_workers=args.workers)
+    test_loader = DataLoader(dataset=test_set,
+                             batch_size=args.batchsize,
+                             collate_fn=batcher,
+                             shuffle=args.shuffle,
+                             num_workers=args.workers)
 
-    model.set_mean_std(test_set.mean,test_set.std)
+    model.set_mean_std(test_set.mean, test_set.std)
     with torch.no_grad():
 
         for idx, (mols, label) in enumerate(test_loader):
@@ -107,50 +127,59 @@ def test(args, test_set,model,device):
         return mse_meter.value()[0], mae_meter.value()[0]
 
 
-def k_center_learn(args,config,train_dataset,test_dataset,model,optimizer,writer,device,test_freq):
+def k_center_learn(args, config, train_dataset, test_dataset, model, optimizer,
+                   writer, device, test_freq):
     ac_info = []
     label_rates = []
     print('start k-center active learning ')
-    t_iterations = int((len(train_dataset)-args.init_data_num)/args.batch_data_num)  #discard tail data
-    total_data_num = t_iterations*args.batch_data_num+args.init_data_num
-    train_ids = random.sample(range(total_data_num),args.init_data_num)
+    t_iterations = int((len(train_dataset) - args.init_data_num) /
+                       args.batch_data_num)  #discard tail data
+    total_data_num = t_iterations * args.batch_data_num + args.init_data_num
+    train_ids = random.sample(range(total_data_num), args.init_data_num)
 
-    K_center_sampler = K_center(args,total_data_num,args.batch_data_num,train_ids)
-    train_info = {'total_epochs':[],
-            'train_loss':[],
-            'train_mae':[]}
+    K_center_sampler = K_center(args, total_data_num, args.batch_data_num,
+                                train_ids)
+    train_info = {'total_epochs': [], 'train_loss': [], 'train_mae': []}
 
     # initialization training
-    train_mols = [train_dataset.mols[i]  for i in train_ids]
+    train_mols = [train_dataset.mols[i] for i in train_ids]
     train_subset = MoleDataset(mols=train_mols)
-    train_info = finetune(args,train_subset,model,optimizer,writer,train_info,device,0)
-    for iter in range(1,t_iterations+1):
-        embeddings = get_preds(args,model,train_dataset,device)
+    train_info = finetune(args, train_subset, model, optimizer, writer,
+                          train_info, device, 0)
+    for iter in range(1, t_iterations + 1):
+        embeddings = get_preds(args, model, train_dataset, device)
         query_ids = K_center_sampler.query(embeddings)
         train_mols.extend([train_dataset.mols[i] for i in query_ids])
         train_subset = MoleDataset(mols=train_mols)
-        label_rate = len(train_subset)/total_data_num
+        label_rate = len(train_subset) / total_data_num
         label_rates.append(label_rate)
         #finetuning
-        train_info = finetune(args,train_subset,model,optimizer,writer,train_info,device,iter)
+        train_info = finetune(args, train_subset, model, optimizer, writer,
+                              train_info, device, iter)
 
         if iter % args.test_freq == 0:
-            testing_mse, testing_mae = test(args,test_dataset,model,device)
-            print('labels ratio {} number {}  test mae {}'.format(label_rate,len(train_subset), testing_mae))
-            ac_info.append((train_info['train_loss'][-1],train_info['train_mae'][-1],testing_mse,testing_mae))
+            testing_mse, testing_mae = test(args, test_dataset, model, device)
+            print('labels ratio {} number {}  test mae {}'.format(
+                label_rate, len(train_subset), testing_mae))
+            ac_info.append(
+                (train_info['train_loss'][-1], train_info['train_mae'][-1],
+                 testing_mse, testing_mae))
 
             if args.use_tb:
-                writer.add_scalar('test_mae',testing_mae,label_rate)
+                writer.add_scalar('test_mae', testing_mae, label_rate)
             if args.save_model:
-                torch.save({
-                    'info_train':train_info,
-                    'testing_mae':testing_mae,
-                    'model':model.state_dict(),
-                    'data_ids':K_center_sampler.data_ids
-                },config.save_model_path(args.dataset+'k_center_ac'))
+                torch.save(
+                    {
+                        'info_train': train_info,
+                        'testing_mae': testing_mae,
+                        'model': model.state_dict(),
+                        'data_ids': K_center_sampler.data_ids
+                    }, config.save_model_path(args.dataset + 'k_center_ac'))
 
-    ac_results = dict(zip(label_rates,ac_info))
+    ac_results = dict(zip(label_rates, ac_info))
     return ac_results
+
+
 if __name__ == "__main__":
     config = Global_Config()
     args = make_args()
@@ -173,35 +202,40 @@ if __name__ == "__main__":
         args.batch_data_num = 2000
         args.test_freq = 1
 
-
     print(args)
     logs_path = config.PATH + '/datasets/logs' + time.strftime('/%m%d_%H_%M')
-    result_path = config.PATH + '/datasets/k_center/' + args.dataset + time.strftime('_%m%d_%H_%M.txt')
-    train_set, test_set = MoleDataset(prop_name=args.prop_name), MoleDataset(prop_name=args.prop_name)
+    result_path = config.PATH + '/datasets/k_center/' + args.dataset + time.strftime(
+        '_%m%d_%H_%M.txt')
+    train_set, test_set = MoleDataset(prop_name=args.prop_name), MoleDataset(
+        prop_name=args.prop_name)
 
-    train_set.load_mol(config.train_pkl[args.dataset]), test_set.load_mol(config.test_pkl[args.dataset])
+    train_set.load_mol(config.train_pkl[args.dataset]), test_set.load_mol(
+        config.test_pkl[args.dataset])
 
-    device = torch.device('cuda:' + str(args.device) if torch.cuda.is_available() else 'cpu')
+    device = torch.device(
+        'cuda:' + str(args.device) if torch.cuda.is_available() else 'cpu')
     # th.set_default_tensor_type(device)
     if args.use_tb:
         writer = SummaryWriter(log_dir=logs_path, comment='baseline_sch')
     else:
         writer = None
-    model = SchEmbedding(dim=96, n_conv=4, cutoff=30, width=0.1, norm=True, output_dim=1)
+    model = SchEmbedding(dim=96,
+                         n_conv=4,
+                         cutoff=30,
+                         width=0.1,
+                         norm=True,
+                         output_dim=1)
     print(model)
-    optimizer = torch.optim.Adam(model.parameters(),lr=args.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     # label_rates = np.arange(75, 105, 5) / 100  # the first will not be trained
-    results = k_center_learn(args, config, train_set, test_set, model, optimizer, writer, device,args.test_freq)
+    results = k_center_learn(args, config, train_set, test_set, model,
+                             optimizer, writer, device, args.test_freq)
 
     with open(result_path, 'w') as fp:
         for key in results.keys():
-            fp.write(str(key) + '\t' + ''.join([str(i) + '\t' for i in results[key]]) + '\n')
+            fp.write(
+                str(key) + '\t' +
+                ''.join([str(i) + '\t' for i in results[key]]) + '\n')
 
     print('test success')
-
-
-
-
-
-
