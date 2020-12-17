@@ -15,6 +15,8 @@ Orginal paper: ASGN: An Active Semi-supervised Graph Neural Network for Molecula
 + `utils`: Dataset preparation and utils functions.
 + `baselines`: Active learning baselines from [google's implementation](https://github.com/google/active-learning).
 
++ `single_model_al`: contains several baseline models and our method ASGN (in file wsl_al.py)
+
 + `exp`: Experiments loggings.
 
 
